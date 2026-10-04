@@ -7,8 +7,8 @@
 #include "pins.h"
 #include "sensors.h"
 
-static void printDistance(const char *label, Sonar::Side s) {
-  Serial.print(label);
+static void printDistance(const char *name, uint8_t pin, Sonar::Side s) {
+  Serial.printf("  [%-6s (Pin %d)]: ", name, pin);
   int16_t raw = Sonar::rawCm(s);
   if (raw < 0) Serial.print("  --  ");
   else Serial.printf("%4d cm", raw);
@@ -34,9 +34,9 @@ void loop() {
 
   Serial.println("========================================");
   Serial.println("ULTRASONIC SENSORS (blank = nothing within SONAR_MAX_CM):");
-  printDistance("  [Left   (Pin 44)]: ", Sonar::LEFT);
-  printDistance("  [Middle (Pin 43)]: ", Sonar::MID);
-  printDistance("  [Right  (Pin 18)]: ", Sonar::RIGHT);
+  printDistance("Left", PIN_US_ECHO_LEFT, Sonar::LEFT);
+  printDistance("Middle", PIN_US_ECHO_MID, Sonar::MID);
+  printDistance("Right", PIN_US_ECHO_RIGHT, Sonar::RIGHT);
 
   Serial.println("\nIR EDGE SENSORS (1 = sees WHITE border):");
   Serial.printf("  Front-Left  (Pin %d): %d   raw %d\n", PIN_IR_FRONT_LEFT, line.frontLeft, digitalRead(PIN_IR_FRONT_LEFT));
