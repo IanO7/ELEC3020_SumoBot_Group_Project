@@ -4,6 +4,7 @@
 // is exactly what the robot sees.
 #include <Arduino.h>
 
+#include "motors.h"
 #include "pins.h"
 #include "sensors.h"
 
@@ -16,6 +17,11 @@ static void printDistance(const char *name, uint8_t pin, Sonar::Side s) {
 }
 
 void setup() {
+  // Hold the motors off: GPIO44 (right motor IN1) idles HIGH as UART0 RX,
+  // which would otherwise spin the right wheel.
+  Motors::begin();
+  Motors::coast();
+
   Serial.begin(115200);
   delay(1000);
   Serial.println("\n--- Starting Sensor Diagnostics ---");

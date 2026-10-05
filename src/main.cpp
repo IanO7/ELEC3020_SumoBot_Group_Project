@@ -11,6 +11,7 @@
 // =====================================================================
 #include <Arduino.h>
 #include <TFT_eSPI.h>
+#include <esp_system.h>
 
 #include "config.h"
 #include "motors.h"
@@ -267,6 +268,24 @@ static void drawStatic() {
   tft.drawString("KEY: start/stop", 200, 4, 2);
   tft.drawString("SONAR L / M / R (cm)", 4, 96, 2);
   tft.drawString("EDGE", 4, 136, 2);
+
+  // Why did we (re)boot? BROWNOUT = battery sagged when the motors started.
+  const char *why = "?";
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:  why = "power on"; break;
+    case ESP_RST_BROWNOUT: why = "BROWNOUT"; break;
+    case ESP_RST_PANIC:    why = "CRASH"; break;
+    case ESP_RST_SW:       why = "software"; break;
+    case ESP_RST_EXT:      why = "RST button"; break;
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT:      why = "WATCHDOG"; break;
+    default: break;
+  }
+  char buf[32];
+  snprintf(buf, sizeof buf, "reset: %s", why);
+  tft.setTextColor(esp_reset_reason() == ESP_RST_BROWNOUT ? TFT_RED : TFT_DARKGREY, TFT_BLACK);
+  tft.drawString(buf, 200, 28, 2);
 }
 
 static void drawEdgeBox(int x, int y, const char *label, bool active) {

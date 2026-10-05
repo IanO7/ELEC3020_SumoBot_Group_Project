@@ -14,6 +14,13 @@ constexpr bool RIGHT_MOTOR_INVERTED = false;
 constexpr uint32_t MOTOR_PWM_FREQ_HZ = 20000;
 constexpr uint8_t  MOTOR_PWM_BITS    = 8;
 
+// --- Weak-battery protection -----------------------------------------
+// A 9V PP3 battery can't supply motor start-up current: the voltage
+// collapses and the ESP32 resets. These cap and soften motor current.
+// With a proper battery (2x18650 / 2S LiPo / 6xAA) set 255 and 0.
+constexpr uint8_t  MOTOR_SPEED_LIMIT = 140;  // every speed is scaled to at most this (255 = no limit)
+constexpr uint16_t MOTOR_RAMP_MS     = 200;  // time to ramp 0 -> full speed (0 = instant)
+
 // --- IR edge sensors --------------------------------------------------
 // Level a sensor outputs when it sees the WHITE border.
 // TCRT5000 modules pull LOW on white -> LOW.

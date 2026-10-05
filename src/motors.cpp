@@ -33,6 +33,19 @@ void Motor::write(uint8_t pin, uint8_t ch, uint32_t duty) {
 
 void Motor::set(int speed) {
   speed = constrain(speed, -255, 255);
+  speed = speed * MOTOR_SPEED_LIMIT / 255;
+
+  // Ramp toward the target so the motors never get a sudden current surge.
+  uint32_t now = millis();
+  if (MOTOR_RAMP_MS > 0) {
+    float maxStep = 255.0f * (now - lastMs_) / MOTOR_RAMP_MS;
+    current_ += constrain(speed - current_, -maxStep, maxStep);
+  } else {
+    current_ = speed;
+  }
+  lastMs_ = now;
+  speed = (int)current_;
+
   if (inverted_) speed = -speed;
   uint32_t duty = (uint32_t)abs(speed) * PWM_MAX / 255;
 
@@ -49,11 +62,15 @@ void Motor::set(int speed) {
 }
 
 void Motor::brake() {
+  current_ = 0;
+  lastMs_ = millis();
   write(in1_, ch1_, PWM_MAX);
   write(in2_, ch2_, PWM_MAX);
 }
 
 void Motor::coast() {
+  current_ = 0;
+  lastMs_ = millis();
   write(in1_, ch1_, 0);
   write(in2_, ch2_, 0);
 }

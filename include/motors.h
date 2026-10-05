@@ -13,6 +13,8 @@ class Motor {
   void write(uint8_t pin, uint8_t ch, uint32_t duty);
   uint8_t in1_, in2_, ch1_, ch2_;
   bool inverted_;
+  float current_ = 0;     // speed actually applied (after ramping)
+  uint32_t lastMs_ = 0;
 };
 
 namespace Motors {
