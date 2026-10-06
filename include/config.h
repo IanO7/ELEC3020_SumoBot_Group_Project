@@ -30,9 +30,9 @@ constexpr uint16_t MOTOR_RAMP_MS     = 400;  // time to ramp 0 -> full speed (0 
 // HIGH on black (no reflection) -> HIGH. A standard black ring with a
 // white border would need LOW.
 constexpr uint8_t LINE_ACTIVE_LEVEL = HIGH;
-// TEMPORARY: rear sensors sit too high and always read "border".
-// false = the sumo code ignores them (sensor_test still shows them).
-constexpr bool USE_REAR_EDGE_SENSORS = false;
+// false = the sumo code ignores the rear sensors (sensor_test still shows
+// them). Use if they're mounted too high and always read "border".
+constexpr bool USE_REAR_EDGE_SENSORS = true;
 // A sensor must see the border continuously this long before it counts.
 // Filters out motor-noise spikes (a few us-ms) that caused phantom EDGEs.
 constexpr uint32_t EDGE_CONFIRM_MS = 10;

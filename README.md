@@ -8,7 +8,7 @@ Sumobot firmware for the **LILYGO T-Display-S3** (ESP32-S3), built with Platform
 |---|---|
 | Upload / flashing | ✅ Works (use BOOT + RST if no COM port appears) |
 | Motor wiring (`motor_test`) | ✅ All steps correct |
-| Sensors (`sensor_test`) | ✅ Ultrasonics and front IR correct. ⚠️ **Rear IR disabled** (`USE_REAR_EDGE_SENSORS = false`): mounted too high, always read "border" |
+| Sensors (`sensor_test`) | ✅ Ultrasonics and all 4 IR sensors correct (rear IR lowered and re-enabled 6 Oct) |
 | Edge detection (front) | ✅ Stays inside the black border on the practice mat |
 | Attack / search | ⚠️ **Jerky, switches between ATTACK / SEARCH / EDGE too often.** Doesn't push objects out yet. See below |
 | Power | ⚠️ **9V PP3 too weak.** Resets the ESP32 at full motor power; running in weak-battery mode |
@@ -40,9 +40,8 @@ If 1–4 fail → code/sensor issue. If 1–4 pass but the robot still jerks on 
 **To do**
 1. Get a proper battery: **3S LiPo (11.1V)**, e.g. CNHL Ministar 650mAh 3S XT30 ($15.95, Buzz FPV Wangara) + XT30 pigtail. Needs a LiPo balance charger. Must stay under the MDD3A's 16V max.
 2. Run the test log above.
-3. Lower the rear IR sensors until they read correctly in `sensor_test`, then set `USE_REAR_EDGE_SENSORS = true`.
-4. Switch weak-battery mode off (see below), and set `DISPLAY_LIVE_IN_MATCH = false` for competition.
-5. Re-tune the timed moves (`ESCAPE_*_MS`, `SEARCH_SPIN_MS`) at full power. Fill in checklist section 3.
+3. Switch weak-battery mode off (see below), and set `DISPLAY_LIVE_IN_MATCH = false` for competition.
+4. Re-tune the timed moves (`ESCAPE_*_MS`, `SEARCH_SPIN_MS`) at full power. Fill in checklist section 3.
 
 ### Weak-battery mode
 
