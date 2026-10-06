@@ -44,7 +44,7 @@ void loop() {
   printDistance("Middle", PIN_US_ECHO_MID, Sonar::MID);
   printDistance("Right", PIN_US_ECHO_RIGHT, Sonar::RIGHT);
 
-  Serial.println("\nIR EDGE SENSORS (1 = sees WHITE border):");
+  Serial.println("\nIR EDGE SENSORS (1 = sees the BLACK border):");
   Serial.printf("  Front-Left  (Pin %d): %d   raw %d\n", PIN_IR_FRONT_LEFT, line.frontLeft, digitalRead(PIN_IR_FRONT_LEFT));
   Serial.printf("  Front-Right (Pin %d): %d   raw %d\n", PIN_IR_FRONT_RIGHT, line.frontRight, digitalRead(PIN_IR_FRONT_RIGHT));
   Serial.printf("  Rear-Right  (Pin %d): %d   raw %d\n", PIN_IR_REAR_RIGHT, line.rearRight, digitalRead(PIN_IR_REAR_RIGHT));

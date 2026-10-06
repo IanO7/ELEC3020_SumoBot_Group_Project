@@ -18,7 +18,7 @@ int16_t rawCm(Side s);     // latest unfiltered reading, -1 = nothing in range
 }  // namespace Sonar
 
 // ---------------------------------------------------------------------
-//  IR edge sensors: true = that sensor is over the white border.
+//  IR edge sensors: true = that sensor is over the ring border (see LINE_ACTIVE_LEVEL).
 // ---------------------------------------------------------------------
 struct LineState {
   bool frontLeft, frontRight, rearLeft, rearRight;

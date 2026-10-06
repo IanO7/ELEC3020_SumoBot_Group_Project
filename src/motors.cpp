@@ -33,15 +33,22 @@ void Motor::write(uint8_t pin, uint8_t ch, uint32_t duty) {
 
 void Motor::set(int speed) {
   speed = constrain(speed, -255, 255);
-  speed = speed * MOTOR_SPEED_LIMIT / 255;
+  if (speed != 0) {
+    int mag = MOTOR_SPEED_MIN + (abs(speed) - 1) * (MOTOR_SPEED_LIMIT - MOTOR_SPEED_MIN) / 254;
+    speed = speed > 0 ? mag : -mag;
+  }
 
-  // Ramp toward the target so the motors never get a sudden current surge.
+  // Ramp only when speeding up - that's what surges the battery current.
+  // Slowing down and direction changes are instant so escapes stay sharp.
   uint32_t now = millis();
-  if (MOTOR_RAMP_MS > 0) {
+  bool sameDir = (speed > 0 && current_ > 0) || (speed < 0 && current_ < 0);
+  if (MOTOR_RAMP_MS == 0 || speed == 0 || (sameDir && abs(speed) <= fabsf(current_))) {
+    current_ = speed;
+  } else {
+    // Starting or reversing: jump to the minimum (less doesn't turn the wheels).
+    if (!sameDir) current_ = speed > 0 ? MOTOR_SPEED_MIN : -MOTOR_SPEED_MIN;
     float maxStep = 255.0f * (now - lastMs_) / MOTOR_RAMP_MS;
     current_ += constrain(speed - current_, -maxStep, maxStep);
-  } else {
-    current_ = speed;
   }
   lastMs_ = now;
   speed = (int)current_;

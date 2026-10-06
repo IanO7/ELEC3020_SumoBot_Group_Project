@@ -2,21 +2,47 @@
 
 Sumobot firmware for the **LILYGO T-Display-S3** (ESP32-S3), built with PlatformIO.
 
-## Current status (5 Oct 2026)
+## Current status (6 Oct 2026)
 
 | Part | Status |
 |---|---|
 | Upload / flashing | ✅ Works (use BOOT + RST if no COM port appears) |
 | Motor wiring (`motor_test`) | ✅ All steps correct |
-| Sensors (`sensor_test`) | ✅ Ultrasonics and IR all reading correctly |
-| Sumo firmware (`sumo`) | ✅ Screen, KEY start/stop, countdown, edge detection all work on the bench. ⏳ Not yet tested on a real ring |
-| Power | ⚠️ **9V PP3 battery is too weak.** Motors starting at full power make the voltage collapse and the ESP32 resets (back to READY). Running in weak-battery mode for now (see below) |
+| Sensors (`sensor_test`) | ✅ Ultrasonics and front IR correct. ⚠️ **Rear IR disabled** (`USE_REAR_EDGE_SENSORS = false`): mounted too high, always read "border" |
+| Edge detection (front) | ✅ Stays inside the black border on the practice mat |
+| Attack / search | ⚠️ **Jerky, switches between ATTACK / SEARCH / EDGE too often.** Doesn't push objects out yet. See below |
+| Power | ⚠️ **9V PP3 too weak.** Resets the ESP32 at full motor power; running in weak-battery mode |
+
+### Jerking: what we know
+
+- **Confirmed (video, 6 Oct):** in weak-battery mode on the 9V the motors get ~2–3V. The robot barely moves and twitches in place at the border for 15+ s. Timed moves (escape reverse/turn, search spin) don't physically move it, so it keeps re-finding the same edge. It can't push anything at this power.
+- **Stand test (6 Oct):** with the wheels free, states behave correctly with only slight oscillation → the logic is mostly fine. Some jerk is built into the design (search = spin then forward, escape = reverse then turn, attack = fixed straight/curve/pivot moves, instant reversals) and will remain, faster, at full power.
+- **Already added in code:** edge sensors must read the border for 10 ms (`EDGE_CONFIRM_MS`), sonar median-of-3 + range hysteresis, 0.25 s hold when the target drops out, side sonars limited to 35 cm, close-only escape interrupt, 0.5 s post-escape cooldown, push-through at the edge when in contact.
+- **Planned after the stand test:** smoother motion (search as a continuous arc, proportional attack steering, short ramp on reversals).
+- **Test target:** use a box at least 10 cm tall. A 9V battery is too small/low for the sonars.
+
+### Test log
+
+| # | Test | Status | Result |
+|---|---|---|---|
+| 1 | **Stand test, 9V** (wheels off the ground, watch the state on screen, white card under the front IR sensors). Nothing within 1 m → should stay in SEARCH | ✅ 6 Oct | Mostly SEARCH, slight oscillation to ATTACK |
+| 2 | Stand test: box ~30 cm in front of middle sonar → should stay in ATTACK, wheels forward | ✅ 6 Oct | Stays in ATTACK; back to SEARCH when removed (slight oscillation on removal) |
+| 3 | Stand test: move box slowly left/right → wheels steer toward it without snapping | ⏳ Not checked | |
+| 4 | Stand test: black card under one front IR → EDGE once (reverse, turn), then SEARCH | ✅ 6 Oct | Edge OK. Note: on a stand with nothing under it, the IR sees "black" (no reflection) → constant EDGE, so put white card under for tests 1–3 |
+| 5 | **Fit 3S LiPo**, weak-battery mode off, repeat tests 1–4 on the stand | ⏳ To do | |
+| 6 | Mat, no object: moves around smoothly, never leaves the ring | ⏳ To do | |
+| 7 | Mat, cardboard box: finds it and pushes it out | ⏳ To do | |
+
+If 1–4 fail → code/sensor issue. If 1–4 pass but the robot still jerks on the mat with the 9V → power.
+
+**Result (6 Oct, confirmed on a second stand video):** robot held in the air, white card under the front IR sensors. Edge triggers correctly when the card is removed, and starts in SEARCH. It switches straight to ATTACK when a hand or object is put in front, with very little oscillation. Stand tests 1, 2, 4 pass with only slight oscillation → the logic works; the heavy jerking on the mat is mainly the 9V. Remaining small oscillation will be smoothed after the LiPo test (planned smoother motion above).
 
 **To do**
-1. Get a proper battery. Best match for the 12V motors: **3S LiPo or 3× 18650 (11.1V)**. 2S (7.4V) also works but at roughly 60% speed. Must stay under the MDD3A's 16V max. Check competition rules.
-2. Switch weak-battery mode off (see below).
-3. Ring tests: no opponent (never falls off), then a weighted box (finds it and pushes it out). Fill in checklist section 3.
-4. Re-tune the timed moves (`ESCAPE_*_MS`, `SEARCH_SPIN_MS`) at full power.
+1. Get a proper battery: **3S LiPo (11.1V)**, e.g. CNHL Ministar 650mAh 3S XT30 ($15.95, Buzz FPV Wangara) + XT30 pigtail. Needs a LiPo balance charger. Must stay under the MDD3A's 16V max.
+2. Run the test log above.
+3. Lower the rear IR sensors until they read correctly in `sensor_test`, then set `USE_REAR_EDGE_SENSORS = true`.
+4. Switch weak-battery mode off (see below), and set `DISPLAY_LIVE_IN_MATCH = false` for competition.
+5. Re-tune the timed moves (`ESCAPE_*_MS`, `SEARCH_SPIN_MS`) at full power. Fill in checklist section 3.
 
 ### Weak-battery mode
 
@@ -24,10 +50,11 @@ In `include/config.h`:
 
 | Setting | Now (9V battery) | Proper battery |
 |---|---|---|
-| `MOTOR_SPEED_LIMIT` | `140` (~55% power) | `255` |
-| `MOTOR_RAMP_MS` | `200` (gradual start) | `0` (or `50` if it still resets occasionally) |
+| `MOTOR_SPEED_LIMIT` | `110` (~43% max power) | `255` |
+| `MOTOR_SPEED_MIN` | `70` (slowest speed that still moves) | `0` |
+| `MOTOR_RAMP_MS` | `400` (gradual start) | `0` (or `50` if it still resets occasionally) |
 
-If the robot still resets on the 9V, lower `MOTOR_SPEED_LIMIT` (110, 90) or raise `MOTOR_RAMP_MS` (400). The screen shows `reset: BROWNOUT` (top right) after a power-related reset.
+If the robot still resets on the 9V, lower `MOTOR_SPEED_LIMIT` (90) or raise `MOTOR_RAMP_MS` (600). If a wheel hums but doesn't turn, raise `MOTOR_SPEED_MIN`. The screen shows `reset: BROWNOUT` (top right) after a power-related reset.
 
 Timings tuned in weak-battery mode will be off at full power, because they are times, not angles.
 
@@ -100,7 +127,7 @@ Do not use GPIO 0, 4–9, 14, 15, 19, 20, 38–42, 45–48. The board uses them 
 
 1. Press **KEY** → 5 s countdown on screen → match starts. Press KEY again to stop; press once more to re-arm.
 2. Every loop, in priority order:
-   - **Edge:** an IR sensor sees white → back off and turn away (rear sensor → drive forward).
+   - **Edge:** an IR sensor sees the black border → back off and turn away (rear sensor → drive forward).
    - **Attack:** a sonar sees the opponent → steer at it and push (full power when close).
    - **Search:** spin toward where the opponent was last seen, then move forward a bit and repeat.
 
@@ -112,16 +139,16 @@ Tester: ________ Date: ________
 
 ### 1. Sensor test (`sensor_test`)
 
-**IR edge sensors.** In the serial output, `1` should mean the sensor is over **white**.
+**IR edge sensors.** In the serial output, `1` should mean the sensor is over the **black border**. (Our ring is white inside with a black border.)
 
-| Sensor | Reads 1 on white? | Reads 0 on black? | Notes |
+| Sensor | Reads 1 on black border? | Reads 0 on white inside? | Notes |
 |---|---|---|---|
 | Front-left (1) | ☐ | ☐ | |
 | Front-right (12) | ☐ | ☐ | |
 | Rear-right (16) | ☐ | ☐ | |
 | Rear-left (43) | ☐ | ☐ | |
 
-- [ ] If they are all backwards, flip `LINE_ACTIVE_LEVEL` in `config.h` (currently `LOW`).
+- [ ] If they are all backwards, flip `LINE_ACTIVE_LEVEL` in `config.h` (currently `HIGH`).
 - [ ] Sensor height / trim pot adjusted so it triggers reliably on the real ring border.
 
 **Ultrasonic.** Put a box in front of each sensor.
@@ -133,7 +160,7 @@ Tester: ________ Date: ________
 | Right (13) | | | | |
 
 - [ ] An empty ring shows no false targets (all `--`).
-- [ ] Ring diameter: ______ cm → set `SONAR_MAX_CM` to about the ring diameter (currently `70`).
+- [ ] Ring diameter: ______ cm → `SONAR_MAX_CM` (middle, currently `60`) and `SIDE_MAX_CM` (sides, currently `35`) limit attacks to targets inside the ~1 m ring.
 
 ### 2. Motor test (`motor_test`) — wheels off the ground!
 

@@ -2,7 +2,7 @@
 //  ELEC3020 Sumobot - LILYGO T-Display-S3
 // ---------------------------------------------------------------------
 //  Priority every loop (loop is non-blocking, runs at kHz rates):
-//    1. EDGE   - an IR sensor sees the white border -> timed escape
+//    1. EDGE   - an IR sensor sees the (black) border -> timed escape
 //    2. ATTACK - a sonar sees the opponent -> steer at it and push
 //    3. SEARCH - spin toward where it was last seen, then reposition
 //
@@ -39,6 +39,9 @@ static State state = State::Idle;
 static uint32_t stateSinceMs = 0;
 static int8_t lastSeenDir = START_SEARCH_DIR;  // -1 left, +1 right
 static uint32_t lastContactMs = 0;             // last time mid sonar saw it touching us
+static uint32_t lastTargetMs = 0;              // last time runAttack had a real target
+static int16_t lastAttackL = 0, lastAttackR = 0;  // motor command used for it
+static uint32_t escapeEndMs = 0;               // when the last edge escape finished
 static uint32_t searchPhaseSinceMs = 0;
 static bool searchSpinning = true;
 
@@ -46,7 +49,18 @@ static bool inMatch() {
   return state == State::Search || state == State::Attack || state == State::Escape;
 }
 
-static void setState(State s) {
+// Last few state changes + why, shown on screen after STOP (debugging).
+struct LogEntry {
+  uint32_t ms;
+  State state;
+  char why[16];
+};
+static constexpr uint8_t LOG_SIZE = 7;
+static LogEntry stateLog[LOG_SIZE];
+static uint8_t logCount = 0;  // entries this match (wraps around the buffer)
+static uint32_t matchStartMs = 0;
+
+static void setState(State s, const char *why = "") {
   if (s == state) return;
   state = s;
   stateSinceMs = millis();
@@ -54,7 +68,21 @@ static void setState(State s) {
     searchSpinning = true;
     searchPhaseSinceMs = stateSinceMs;
   }
-  Serial.printf("[%lu] -> %s\n", (unsigned long)stateSinceMs, stateName(s));
+  if (s == State::Countdown) logCount = 0;
+  LogEntry &e = stateLog[logCount++ % LOG_SIZE];
+  e.ms = stateSinceMs - matchStartMs;
+  e.state = s;
+  strncpy(e.why, why, sizeof e.why - 1);
+  e.why[sizeof e.why - 1] = 0;
+  Serial.printf("[%lu] -> %s %s\n", (unsigned long)stateSinceMs, stateName(s), why);
+}
+
+// "L0 M45 R0" summary of what the sonars currently see (0 = nothing).
+static const char *sonarWhy() {
+  static char buf[16];
+  auto d = [](Sonar::Side s) { return Sonar::sees(s) ? (int)Sonar::distanceCm(s) : 0; };
+  snprintf(buf, sizeof buf, "L%d M%d R%d", d(Sonar::LEFT), d(Sonar::MID), d(Sonar::RIGHT));
+  return buf;
 }
 
 // --------------------------------------------------------------------
@@ -84,6 +112,9 @@ static void planEscape(const LineState &line) {
   escapeCount = 0;
   escapeIndex = 0;
   escapeStepSinceMs = millis();
+  // Forget attack/contact memory so we don't resume driving into the edge.
+  lastTargetMs = 0;
+  lastContactMs = 0;
 
   const bool leftSide = line.frontLeft || line.rearLeft;
   const bool rightSide = line.frontRight || line.rearRight;
@@ -109,7 +140,10 @@ static void planEscape(const LineState &line) {
     else addStep(fast, fast, ESCAPE_FORWARD_MS, true);
   }
 
-  setState(State::Escape);
+  char why[16];
+  snprintf(why, sizeof why, "%s%s%s%s", line.frontLeft ? "FL " : "", line.frontRight ? "FR " : "",
+           line.rearLeft ? "RL " : "", line.rearRight ? "RR" : "");
+  setState(State::Escape, why);
 }
 
 // True if the current step is driving us further onto the border we see.
@@ -127,13 +161,18 @@ static void runEscape() {
     escapeStepSinceMs = now;
   }
   if (escapeIndex >= escapeCount) {
-    setState(State::Search);
+    escapeEndMs = now;
+    setState(State::Search, "escape done");
     return;
   }
 
+  // Only cut the escape short for an opponent close in front - not for
+  // something far away (likely outside the ring).
   const Step &s = escapeSteps[escapeIndex];
-  if (s.interruptible && Sonar::sees(Sonar::MID)) {
-    setState(State::Attack);
+  int16_t d = Sonar::distanceCm(Sonar::MID);
+  if (s.interruptible && Sonar::sees(Sonar::MID) && d > 0 && d <= (int16_t)CLOSE_CM) {
+    escapeEndMs = now;
+    setState(State::Attack, sonarWhy());
     return;
   }
   Motors::drive(s.left, s.right);
@@ -143,12 +182,31 @@ static void runEscape() {
 //  Attack / search
 // --------------------------------------------------------------------
 static bool runAttack() {
-  const bool l = Sonar::sees(Sonar::LEFT);
-  const bool m = Sonar::sees(Sonar::MID);
-  const bool r = Sonar::sees(Sonar::RIGHT);
   const uint32_t now = millis();
+  // Just escaped an edge: only react to close targets for a moment.
+  const bool cooldown = now - escapeEndMs < ESCAPE_COOLDOWN_MS;
+  auto seen = [&](Sonar::Side s) {
+    if (!Sonar::sees(s)) return false;
+    int16_t d = Sonar::distanceCm(s);
+    if (s != Sonar::MID && (!USE_SIDE_SONARS || d > (int16_t)SIDE_MAX_CM)) return false;
+    return !cooldown || (d > 0 && d <= (int16_t)CLOSE_CM);
+  };
+  // Middle sonar had the target a moment ago -> a side-only reading is the
+  // same target drifting off-centre: curve after it, don't pivot hard.
+  static uint32_t lastMidMs = 0;
+  const bool midRecent = lastMidMs && now - lastMidMs < TARGET_LOST_HOLD_MS;
+  const bool l = seen(Sonar::LEFT);
+  const bool m = seen(Sonar::MID);
+  const bool r = seen(Sonar::RIGHT);
+  auto drive = [&](int16_t left, int16_t right) {
+    Motors::drive(left, right);
+    lastAttackL = left;
+    lastAttackR = right;
+    lastTargetMs = now;
+  };
 
   if (m) {
+    lastMidMs = now;
     int16_t d = Sonar::distanceCm(Sonar::MID);
     if (d > 0 && d <= (int16_t)CONTACT_CM) lastContactMs = now;
     int16_t speed = (d > 0 && d <= (int16_t)CLOSE_CM) ? ATTACK_SPEED : APPROACH_SPEED;
@@ -156,34 +214,41 @@ static bool runAttack() {
 
     if (l && !r) {
       lastSeenDir = -1;
-      Motors::drive(inner, speed);
+      drive(inner, speed);
     } else if (r && !l) {
       lastSeenDir = +1;
-      Motors::drive(speed, inner);
+      drive(speed, inner);
     } else {
-      Motors::drive(speed, speed);
+      drive(speed, speed);
     }
   } else if (l && r) {
-    Motors::drive(APPROACH_SPEED, APPROACH_SPEED);  // wide/close target dead ahead
+    drive(APPROACH_SPEED, APPROACH_SPEED);  // wide/close target dead ahead
   } else if (l) {
     lastSeenDir = -1;
-    Motors::drive(-TRACK_TURN_SPEED, TRACK_TURN_SPEED);
+    if (midRecent) drive(APPROACH_SPEED * STEER_RATIO, APPROACH_SPEED);
+    else drive(-TRACK_TURN_SPEED, TRACK_TURN_SPEED);
   } else if (r) {
     lastSeenDir = +1;
-    Motors::drive(TRACK_TURN_SPEED, -TRACK_TURN_SPEED);
-  } else if (now - lastContactMs < CONTACT_HOLD_MS) {
+    if (midRecent) drive(APPROACH_SPEED, APPROACH_SPEED * STEER_RATIO);
+    else drive(TRACK_TURN_SPEED, -TRACK_TURN_SPEED);
+  } else if (lastContactMs && now - lastContactMs < CONTACT_HOLD_MS) {
     // Sonar often reads nothing when pressed against the opponent: keep pushing.
     Motors::drive(ATTACK_SPEED, ATTACK_SPEED);
+  } else if (lastTargetMs && now - lastTargetMs < TARGET_LOST_HOLD_MS &&
+             lastAttackL > 0 && lastAttackR > 0) {
+    // Target dropped out for a moment: keep driving at it. (Pivots aren't
+    // held - that just overshoots and swings the other way.)
+    Motors::drive(lastAttackL, lastAttackR);
   } else {
     return false;
   }
 
-  setState(State::Attack);
+  if (state != State::Attack) setState(State::Attack, sonarWhy());
   return true;
 }
 
 static void runSearch() {
-  setState(State::Search);
+  setState(State::Search, "lost target");
   uint32_t now = millis();
   uint32_t phaseMs = searchSpinning ? SEARCH_SPIN_MS : SEARCH_ADVANCE_MS;
   if (now - searchPhaseSinceMs >= phaseMs) {
@@ -200,8 +265,25 @@ static void runSearch() {
 
 static void runMatch() {
   LineState line = Line::read();
+  if (!USE_REAR_EDGE_SENSORS) line.rearLeft = line.rearRight = false;
+  const uint32_t now = millis();
 
-  // 1. Edge always wins.
+  // Push-through: in contact with the opponent and only our front is on the
+  // border -> they're further out than us, so keep pushing for a moment.
+  static uint32_t pushEdgeSinceMs = 0;
+  static bool pushingAtEdge = false;
+  bool inContact = state == State::Attack && lastContactMs && now - lastContactMs < CONTACT_HOLD_MS;
+  if (line.front() && !line.rear() && inContact) {
+    if (!pushingAtEdge) {
+      pushingAtEdge = true;
+      pushEdgeSinceMs = now;
+    }
+    if (now - pushEdgeSinceMs < EDGE_PUSH_THROUGH_MS) line = LineState{};
+  } else {
+    pushingAtEdge = false;
+  }
+
+  // 1. Edge wins (except during a push-through).
   if (line.any() && (state != State::Escape || escapeConflicts(line))) {
     planEscape(line);
   }
@@ -233,15 +315,18 @@ static bool buttonPressed() {
 static void handleStartStop() {
   if (USE_START_MODULE) {
     bool go = digitalRead(PIN_START_MODULE) == HIGH;
-    if (go && state == State::Idle) setState(State::Search);  // module handles the delay
-    if (!go && inMatch()) setState(State::Stopped);
+    if (go && state == State::Idle) {
+      matchStartMs = millis();
+      setState(State::Search, "start module");
+    }  // module handles the delay
+    if (!go && inMatch()) setState(State::Stopped, "start module");
   }
 
   if (!buttonPressed()) return;
   switch (state) {
-    case State::Idle:    setState(State::Countdown); break;
-    case State::Stopped: setState(State::Idle); break;
-    default:             setState(State::Stopped); break;  // countdown or fighting
+    case State::Idle:    matchStartMs = millis(); setState(State::Countdown, "KEY"); break;
+    case State::Stopped: setState(State::Idle, "KEY"); break;
+    default:             setState(State::Stopped, "KEY"); break;  // countdown or fighting
   }
 }
 
@@ -288,9 +373,9 @@ static void drawStatic() {
   tft.drawString(buf, 200, 28, 2);
 }
 
-static void drawEdgeBox(int x, int y, const char *label, bool active) {
-  tft.fillRoundRect(x, y, 44, 22, 4, active ? TFT_WHITE : TFT_NAVY);
-  tft.setTextColor(active ? TFT_BLACK : TFT_LIGHTGREY);
+static void drawEdgeBox(int x, int y, const char *label, bool active, bool enabled = true) {
+  tft.fillRoundRect(x, y, 44, 22, 4, !enabled ? TFT_DARKGREY : active ? TFT_RED : TFT_NAVY);
+  tft.setTextColor(active || !enabled ? TFT_WHITE : TFT_LIGHTGREY);
   tft.drawCentreString(label, x + 22, y + 3, 2);
 }
 
@@ -306,14 +391,28 @@ static void drawLive() {
   LineState line = Line::read();
   drawEdgeBox(50, 132, "FL", line.frontLeft);
   drawEdgeBox(98, 132, "FR", line.frontRight);
-  drawEdgeBox(146, 132, "RL", line.rearLeft);
-  drawEdgeBox(194, 132, "RR", line.rearRight);
+  drawEdgeBox(146, 132, "RL", line.rearLeft, USE_REAR_EDGE_SENSORS);
+  drawEdgeBox(194, 132, "RR", line.rearRight, USE_REAR_EDGE_SENSORS);
 
   float vbat = analogReadMilliVolts(PIN_BATTERY) * 2 / 1000.0f;
   snprintf(buf, sizeof buf, "%.2fV", vbat);
   tft.setTextPadding(60);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   tft.drawString(buf, 252, 136, 2);
+}
+
+// After STOP: the last state changes of the match, oldest first.
+static void drawLog() {
+  tft.fillRect(0, 56, 320, 114, TFT_BLACK);
+  tft.setTextPadding(0);
+  uint8_t n = logCount < LOG_SIZE ? logCount : LOG_SIZE;
+  for (uint8_t i = 0; i < n; i++) {
+    const LogEntry &e = stateLog[(logCount - n + i) % LOG_SIZE];
+    char buf[40];
+    snprintf(buf, sizeof buf, "%6.2fs %-9s %s", e.ms / 1000.0f, stateName(e.state), e.why);
+    tft.setTextColor(stateColor(e.state), TFT_BLACK);
+    tft.drawString(buf, 4, 56 + i * 16, 2);
+  }
 }
 
 static void updateDisplay() {
@@ -324,13 +423,19 @@ static void updateDisplay() {
   uint32_t now = millis();
 
   if (state != shown) {
+    if (shown == State::Stopped) drawStatic();  // leaving the log screen
     shown = state;
     lastSecs = -1;
     tft.setTextPadding(312);
     tft.setTextColor(stateColor(state), TFT_BLACK);
     tft.drawString(stateName(state), 4, 28, 4);
     if (state != State::Countdown) tft.drawString("", 4, 56, 4);
+    if (state == State::Stopped) {
+      drawLog();
+      return;
+    }
   }
+  if (state == State::Stopped) return;  // keep the log on screen
 
   if (state == State::Countdown) {
     int secs = (START_DELAY_MS - (now - stateSinceMs) + 999) / 1000;
@@ -344,8 +449,8 @@ static void updateDisplay() {
     }
   }
 
-  // Live sensor view is for setup/calibration; skip it while fighting.
-  if (!inMatch() && now - lastLiveMs >= DISPLAY_REFRESH_MS) {
+  // Live sensor view: always before/after a match, during it only if enabled.
+  if ((!inMatch() || DISPLAY_LIVE_IN_MATCH) && now - lastLiveMs >= DISPLAY_REFRESH_MS) {
     lastLiveMs = now;
     drawLive();
   }
@@ -389,7 +494,7 @@ void loop() {
       break;
     case State::Countdown:
       Motors::brake();
-      if (millis() - stateSinceMs >= START_DELAY_MS) setState(State::Search);
+      if (millis() - stateSinceMs >= START_DELAY_MS) setState(State::Search, "go");
       break;
     default:
       runMatch();
