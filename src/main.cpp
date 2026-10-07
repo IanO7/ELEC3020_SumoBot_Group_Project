@@ -252,12 +252,18 @@ static void runSearch() {
   uint32_t now = millis();
   uint32_t phaseMs = searchSpinning ? SEARCH_SPIN_MS : SEARCH_ADVANCE_MS;
   if (now - searchPhaseSinceMs >= phaseMs) {
-    searchSpinning = !searchSpinning;
+    // Arc mode: one spin, then curve until something happens (no stop-start).
+    searchSpinning = SEARCH_ARC ? false : !searchSpinning;
     searchPhaseSinceMs = now;
   }
 
   if (searchSpinning) {
     Motors::drive(lastSeenDir * SEARCH_TURN_SPEED, -lastSeenDir * SEARCH_TURN_SPEED);
+  } else if (SEARCH_ARC) {
+    // Curve toward where the target was last seen; edge sensors guard us.
+    int16_t outer = SEARCH_ARC_OUTER, inner = SEARCH_ARC_INNER;
+    if (lastSeenDir > 0) Motors::drive(outer, inner);
+    else Motors::drive(inner, outer);
   } else {
     Motors::drive(SEARCH_FWD_SPEED, SEARCH_FWD_SPEED);  // reposition; edge sensors guard us
   }

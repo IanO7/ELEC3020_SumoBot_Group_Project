@@ -85,6 +85,11 @@ constexpr uint8_t  SEARCH_TURN_SPEED = 150;
 constexpr uint8_t  SEARCH_FWD_SPEED  = 140;
 constexpr uint32_t SEARCH_SPIN_MS    = 1200; // ~1 full turn, then reposition
 constexpr uint32_t SEARCH_ADVANCE_MS = 350;
+// true  = spin once, then drive a continuous curve (smooth, no stop-start).
+// false = keep alternating spin SEARCH_SPIN_MS / forward SEARCH_ADVANCE_MS.
+constexpr bool     SEARCH_ARC        = true;
+constexpr uint8_t  SEARCH_ARC_OUTER  = 200;  // outer wheel speed while curving
+constexpr uint8_t  SEARCH_ARC_INNER  = 40;   // inner wheel (bigger = wider curve)
 
 // --- Edge escape ------------------------------------------------------
 constexpr uint8_t  ESCAPE_REVERSE_SPEED = 220;

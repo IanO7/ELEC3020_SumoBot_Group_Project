@@ -50,7 +50,7 @@ In `include/config.h`:
 | Setting | Now (9V battery) | Proper battery |
 |---|---|---|
 | `MOTOR_SPEED_LIMIT` | `110` (~43% max power) | `255` |
-| `MOTOR_SPEED_MIN` | `70` (slowest speed that still moves) | `0` |
+| `MOTOR_SPEED_MIN` | `70` (raise to ~100 if the robot struggles to move on the mat) | `0` |
 | `MOTOR_RAMP_MS` | `400` (gradual start) | `0` (or `50` if it still resets occasionally) |
 
 If the robot still resets on the 9V, lower `MOTOR_SPEED_LIMIT` (90) or raise `MOTOR_RAMP_MS` (600). If a wheel hums but doesn't turn, raise `MOTOR_SPEED_MIN`. The screen shows `reset: BROWNOUT` (top right) after a power-related reset.
@@ -128,7 +128,7 @@ Do not use GPIO 0, 4–9, 14, 15, 19, 20, 38–42, 45–48. The board uses them 
 2. Every loop, in priority order:
    - **Edge:** an IR sensor sees the black border → back off and turn away (rear sensor → drive forward).
    - **Attack:** a sonar sees the opponent → steer at it and push (full power when close).
-   - **Search:** spin toward where the opponent was last seen, then move forward a bit and repeat.
+   - **Search:** spin once toward where the opponent was last seen, then drive a continuous curve (`SEARCH_ARC`).
 
 ---
 
