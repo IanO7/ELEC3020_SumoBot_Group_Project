@@ -33,6 +33,8 @@ constexpr uint8_t LINE_ACTIVE_LEVEL = HIGH;
 // false = the sumo code ignores the rear sensors (sensor_test still shows
 // them). Use if they're mounted too high and always read "border".
 constexpr bool USE_REAR_EDGE_SENSORS = true;
+// TEMPORARY: rear-right sensor misbehaving -> ignored by the sumo code.
+constexpr bool USE_REAR_RIGHT_SENSOR = false;
 // A sensor must see the border continuously this long before it counts.
 // Filters out motor-noise spikes (a few us-ms) that caused phantom EDGEs.
 constexpr uint32_t EDGE_CONFIRM_MS = 10;
@@ -56,7 +58,7 @@ constexpr uint32_t START_DELAY_MS   = 5000;  // mandatory 5 s after pressing sta
 // true = start the 5 s countdown as soon as the robot powers on (no KEY
 // press needed). KEY still stops it. NOTE: a brownout reset will also
 // restart the countdown, so the robot starts driving again by itself.
-constexpr bool     AUTO_START       = true;
+constexpr bool     AUTO_START       = false;
 constexpr bool     USE_START_MODULE = false; // true = use IR start module on PIN_START_MODULE
 constexpr int8_t   START_SEARCH_DIR = +1;    // first search spin: +1 right, -1 left
 

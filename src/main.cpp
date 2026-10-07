@@ -272,6 +272,7 @@ static void runSearch() {
 static void runMatch() {
   LineState line = Line::read();
   if (!USE_REAR_EDGE_SENSORS) line.rearLeft = line.rearRight = false;
+  if (!USE_REAR_RIGHT_SENSOR) line.rearRight = false;
   const uint32_t now = millis();
 
   // Push-through: in contact with the opponent and only our front is on the
@@ -398,7 +399,7 @@ static void drawLive() {
   drawEdgeBox(50, 132, "FL", line.frontLeft);
   drawEdgeBox(98, 132, "FR", line.frontRight);
   drawEdgeBox(146, 132, "RL", line.rearLeft, USE_REAR_EDGE_SENSORS);
-  drawEdgeBox(194, 132, "RR", line.rearRight, USE_REAR_EDGE_SENSORS);
+  drawEdgeBox(194, 132, "RR", line.rearRight, USE_REAR_EDGE_SENSORS && USE_REAR_RIGHT_SENSOR);
 
   float vbat = analogReadMilliVolts(PIN_BATTERY) * 2 / 1000.0f;
   snprintf(buf, sizeof buf, "%.2fV", vbat);

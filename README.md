@@ -8,7 +8,7 @@ Sumobot firmware for the **LILYGO T-Display-S3** (ESP32-S3), built with Platform
 |---|---|
 | Upload / flashing | ✅ Works (use BOOT + RST if no COM port appears) |
 | Motor wiring (`motor_test`) | ✅ All steps correct |
-| Sensors (`sensor_test`) | ✅ Ultrasonics and all 4 IR sensors correct (rear IR lowered and re-enabled 6 Oct) |
+| Sensors (`sensor_test`) | ✅ Ultrasonics and 3 IR sensors correct. ⚠️ **Rear-right IR temporarily ignored** (`USE_REAR_RIGHT_SENSOR = false`) |
 | Edge detection (front) | ✅ Stays inside the black border on the practice mat |
 | Attack / search | ⚠️ **Jerky, switches between ATTACK / SEARCH / EDGE too often.** Doesn't push objects out yet. See below |
 | Power | ⚠️ **9V PP3 too weak.** Resets the ESP32 at full motor power; running in weak-battery mode |
@@ -113,9 +113,9 @@ Do not use GPIO 0, 4–9, 14, 15, 19, 20, 38–42, 45–48. The board uses them 
    - If that still fails, try another USB-C cable. Charge-only cables power the board (red LED on) but can't carry data.
 2. **Unplug USB** from the TTGO.
 3. **Mount/plug the TTGO into the robot** (if it was removed).
-4. **Connect the robot battery.** With `AUTO_START = true` (current setting) the 5 s countdown starts immediately, so place the robot in the ring **before** connecting the battery, or within those 5 s.
+4. **Connect the robot battery.** The screen shows READY. (If `AUTO_START = true`, the 5 s countdown starts immediately instead, so place the robot first. Currently `false`.)
 5. **Place the robot** in the ring.
-6. **Press KEY** (right-hand side button) to start the countdown, only needed if `AUTO_START = false` or after stopping. Press KEY during a match to stop.
+6. **Press KEY** (right-hand side button) to start the 5 s countdown. Press KEY during a match to stop.
 7. **When finished:** press KEY to stop, then disconnect the battery **before** plugging USB back in.
 
 **Test programs:**
