@@ -8,10 +8,10 @@ Sumobot firmware for the **LILYGO T-Display-S3** (ESP32-S3), built with Platform
 |---|---|
 | Upload / flashing | ✅ Works (use BOOT + RST if no COM port appears) |
 | Motor wiring (`motor_test`) | ✅ All steps correct |
-| Sensors (`sensor_test`) | ✅ Ultrasonics and 3 IR sensors correct. ⚠️ **Rear-right IR temporarily ignored** (`USE_REAR_RIGHT_SENSOR = false`) |
+| Sensors (`sensor_test`) | ✅ Ultrasonics and 3 IR sensors correct. ⚠️ **Temporary:** rear-right IR ignored (`USE_REAR_RIGHT_SENSOR = false`); sonar range cut to 25 / 15 cm for testing (restore 60 / 35); motors slowed to `MOTOR_SPEED_LIMIT = 160` (restore 255); side sonar range `SIDE_MAX_CM = 15` (restore 35); **edge-only test mode** `TEST_EDGE_ONLY = true` (drives forward, escapes at the border, no attack/search; restore false; `TEST_ATTACK_ONLY` is the attack-only equivalent); **no countdown** `START_DELAY_MS = 0` (restore 5000, required by the rules) |
 | Edge detection (front) | ✅ Stays inside the black border on the practice mat |
 | Attack / search | ⚠️ **Jerky, switches between ATTACK / SEARCH / EDGE too often.** Doesn't push objects out yet. See below |
-| Power | ⚠️ **9V PP3 too weak.** Resets the ESP32 at full motor power; running in weak-battery mode |
+| Power | ✅ **3S LiPo fitted (7 Oct).** Weak-battery mode off: full motor power. Timed moves need re-tuning |
 
 ### Jerking: what we know
 
@@ -29,7 +29,7 @@ Sumobot firmware for the **LILYGO T-Display-S3** (ESP32-S3), built with Platform
 | 2 | Stand test: box ~30 cm in front of middle sonar → should stay in ATTACK, wheels forward | ✅ 6 Oct | Stays in ATTACK; back to SEARCH when removed (slight oscillation on removal) |
 | 3 | Stand test: move box slowly left/right → wheels steer toward it without snapping | ⏳ Not checked | |
 | 4 | Stand test: black card under one front IR → EDGE once (reverse, turn), then SEARCH | ✅ 6 Oct | Edge OK. Note: on a stand with nothing under it, the IR sees "black" (no reflection) → constant EDGE, so put white card under for tests 1–3 |
-| 5 | **Fit 3S LiPo**, weak-battery mode off, repeat tests 1–4 on the stand | ⏳ To do | |
+| 5 | **Fit 3S LiPo**, weak-battery mode off, repeat tests 1–4 on the stand | ⏳ LiPo fitted 7 Oct, tests to do | |
 | 6 | Mat, no object: moves around smoothly, never leaves the ring | ⏳ To do | |
 | 7 | Mat, cardboard box: finds it and pushes it out | ⏳ To do | |
 
@@ -38,24 +38,15 @@ If 1–4 fail → code/sensor issue. If 1–4 pass but the robot still jerks on 
 **Result (6 Oct, confirmed on a second stand video):** robot held in the air, white card under the front IR sensors. Edge triggers correctly when the card is removed, and starts in SEARCH. It switches straight to ATTACK when a hand or object is put in front, with very little oscillation. Stand tests 1, 2, 4 pass with only slight oscillation → the logic works; the heavy jerking on the mat is mainly the 9V. Remaining small oscillation will be smoothed after the LiPo test (planned smoother motion above).
 
 **To do**
-1. Get a proper battery: **3S LiPo (11.1V)**, e.g. CNHL Ministar 650mAh 3S XT30 ($15.95, Buzz FPV Wangara) + XT30 pigtail. Needs a LiPo balance charger. Must stay under the MDD3A's 16V max.
-2. Run the test log above.
-3. Switch weak-battery mode off (see below), and set `DISPLAY_LIVE_IN_MATCH = false` for competition.
-4. Re-tune the timed moves (`ESCAPE_*_MS`, `SEARCH_SPIN_MS`) at full power. Fill in checklist section 3.
+1. Run the test log above (tests 5–7 with the LiPo).
+2. Set `DISPLAY_LIVE_IN_MATCH = false` and restore the sonar ranges (`SONAR_MAX_CM` 60, `SIDE_MAX_CM` 35) for competition.
+3. Re-tune the timed moves (`ESCAPE_*_MS`, `SEARCH_SPIN_MS`) at full power. Fill in checklist section 3.
 
-### Weak-battery mode
+### Motor power (`include/config.h`)
 
-In `include/config.h`:
+Now on the 3S LiPo: `MOTOR_SPEED_LIMIT = 255`, `MOTOR_SPEED_MIN = 0`, `MOTOR_RAMP_MS = 0` (full power). If the ESP32 ever resets when the motors start (`reset: BROWNOUT` top right), set `MOTOR_RAMP_MS = 50`. For a weak battery again (e.g. 9V PP3): `110` / `70` / `400`.
 
-| Setting | Now (9V battery) | Proper battery |
-|---|---|---|
-| `MOTOR_SPEED_LIMIT` | `110` (~43% max power) | `255` |
-| `MOTOR_SPEED_MIN` | `70` (raise to ~100 if the robot struggles to move on the mat) | `0` |
-| `MOTOR_RAMP_MS` | `400` (gradual start) | `0` (or `50` if it still resets occasionally) |
-
-If the robot still resets on the 9V, lower `MOTOR_SPEED_LIMIT` (90) or raise `MOTOR_RAMP_MS` (600). If a wheel hums but doesn't turn, raise `MOTOR_SPEED_MIN`. The screen shows `reset: BROWNOUT` (top right) after a power-related reset.
-
-Timings tuned in weak-battery mode will be off at full power, because they are times, not angles.
+Timings were set in weak-battery mode and will be too long at full power (they're times, not angles), so re-tune the escape and search times.
 
 ## Project layout
 
@@ -78,6 +69,7 @@ The project contains three separate programs. In the VS Code PlatformIO sidebar,
 | `sumo` (default) | `pio run -e sumo -t upload` | The competition firmware |
 | `sensor_test` | `pio run -e sensor_test -t upload` then `pio device monitor` | Rough sensor check: distances + IR states every 0.5 s |
 | `motor_test` | `pio run -e motor_test -t upload` then `pio device monitor` | Checking motor wiring/direction |
+| `left_motor_test` / `right_motor_test` | `pio run -e left_motor_test -t upload` | One motor at rising speeds, forward then backward. Step and GPIO shown on screen (runs on battery) |
 
 ## Wiring
 
@@ -93,8 +85,8 @@ Source of truth is `include/pins.h`. If this table and that file disagree, the f
 | IR front-right | 12 | |
 | IR rear-right | 16 | |
 | IR rear-left | 43 | U0TXD, may glitch briefly during boot |
-| Left motor IN1 / IN2 (M1A / M1B) | 17 / 18 | |
-| Right motor IN1 / IN2 (M2A / M2B) | 44 / 3 | |
+| Left motor (MDD3A M1A / M1B) | 17 / 18 | M1B = forward, so `LEFT_MOTOR_INVERTED = true` |
+| Right motor (MDD3A M2A / M2B) | 44 / 3 | M2A = forward |
 | Start/stop button | 14 | On-board **KEY**, the right-hand side button (the other side button is BOOT) |
 | Start module (optional) | 21 | Only if `USE_START_MODULE = true` |
 
@@ -113,9 +105,9 @@ Do not use GPIO 0, 4–9, 14, 15, 19, 20, 38–42, 45–48. The board uses them 
    - If that still fails, try another USB-C cable. Charge-only cables power the board (red LED on) but can't carry data.
 2. **Unplug USB** from the TTGO.
 3. **Mount/plug the TTGO into the robot** (if it was removed).
-4. **Connect the robot battery.** The screen shows READY. (If `AUTO_START = true`, the 5 s countdown starts immediately instead, so place the robot first. Currently `false`.)
+4. **Connect the robot battery.** With `AUTO_START = true` (current setting) the 5 s countdown starts immediately, so place the robot in the ring **before** connecting the battery.
 5. **Place the robot** in the ring.
-6. **Press KEY** (right-hand side button) to start the 5 s countdown. Press KEY during a match to stop.
+6. **Press KEY** (right-hand side button) during a match to stop. After stopping: KEY → READY, KEY again → new countdown. (If `AUTO_START = false`, press KEY to start the first countdown.)
 7. **When finished:** press KEY to stop, then disconnect the battery **before** plugging USB back in.
 
 **Test programs:**
@@ -159,7 +151,7 @@ Tester: ________ Date: ________
 | Right (13) | | | | |
 
 - [ ] An empty ring shows no false targets (all `--`).
-- [ ] Ring diameter: ______ cm → `SONAR_MAX_CM` (middle, currently `60`) and `SIDE_MAX_CM` (sides, currently `35`) limit attacks to targets inside the ~1 m ring.
+- [ ] Ring diameter: ______ cm → `SONAR_MAX_CM` (middle, currently `25`, temporary for testing; was `60`) and `SIDE_MAX_CM` (sides, currently `15`; was `35`) limit attacks to targets inside the ~1 m ring.
 
 ### 2. Motor test (`motor_test`) — wheels off the ground!
 

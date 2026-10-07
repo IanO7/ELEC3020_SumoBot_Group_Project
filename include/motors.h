@@ -20,6 +20,8 @@ class Motor {
 namespace Motors {
 void begin();
 void drive(int left, int right);  // each -255..255
+int lastLeft();                   // last commanded speeds (0 after brake/coast)
+int lastRight();
 void brake();
 void coast();
 }  // namespace Motors

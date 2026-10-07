@@ -89,22 +89,30 @@ static Motor rightMotor(PIN_MOTOR_R_IN1, PIN_MOTOR_R_IN2, 2, 3, RIGHT_MOTOR_INVE
 
 namespace Motors {
 
+static int cmdLeft = 0, cmdRight = 0;  // last commanded speeds, for the display
+int lastLeft() { return cmdLeft; }
+int lastRight() { return cmdRight; }
+
 void begin() {
   leftMotor.begin();
   rightMotor.begin();
 }
 
 void drive(int left, int right) {
+  cmdLeft = left;
+  cmdRight = right;
   leftMotor.set(left);
   rightMotor.set(right);
 }
 
 void brake() {
+  cmdLeft = cmdRight = 0;
   leftMotor.brake();
   rightMotor.brake();
 }
 
 void coast() {
+  cmdLeft = cmdRight = 0;
   leftMotor.coast();
   rightMotor.coast();
 }

@@ -30,10 +30,15 @@ constexpr uint8_t PIN_IR_REAR_LEFT   = 43;  // IR bottom left (U0TXD - may glitc
 // --- Motor driver: 2 inputs per motor, PWM on the inputs --------------
 // Works with DRV8833, MX1508/TB67H450, or L298N with ENA/ENB jumpers ON.
 // (TB6612: tie PWMA/PWMB and STBY to 3.3V, use AIN/BIN as below.)
+// MDD3A button test (7 Oct):
+//   LEFT wheel  = M1: M1A = backward, M1B = forward -> LEFT_MOTOR_INVERTED = true
+//   RIGHT wheel = M2: M2A = forward,  M2B = backward
+// If a wheel spins the wrong way in motor_test, flip *_MOTOR_INVERTED in
+// config.h (don't swap pins).
+constexpr uint8_t PIN_MOTOR_R_IN1 = 44;  // M2A (idles HIGH at boot: brief twitch)
+constexpr uint8_t PIN_MOTOR_R_IN2 = 3;   // M2B (strapping pin, fine as output)
 constexpr uint8_t PIN_MOTOR_L_IN1 = 17;  // M1A
 constexpr uint8_t PIN_MOTOR_L_IN2 = 18;  // M1B
-constexpr uint8_t PIN_MOTOR_R_IN1 = 44;  // M2A
-constexpr uint8_t PIN_MOTOR_R_IN2 = 3;   // M2B (strapping pin, fine as output)
 
 // --- Start / stop -----------------------------------------------------
 constexpr uint8_t PIN_BTN_START    = 14;  // on-board KEY button (active LOW)

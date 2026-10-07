@@ -34,7 +34,10 @@ uint32_t lastPingMs = 0;
 bool waiting = false;
 
 // Echo goes high ~0.5-2 ms after the trigger, then stays high for the round trip.
-constexpr uint16_t MEASURE_MAX_CM = SONAR_MAX_CM + SONAR_HYST_CM;
+// Always listen out to 150 cm (timeout ~11 ms, well inside the 30 ms ping
+// period) - some HC-SR04 clones take 2-3 ms just to start the echo, so a
+// short timeout drops close readings. SONAR_MAX_CM is applied in record().
+constexpr uint16_t MEASURE_MAX_CM = 150;
 constexpr uint32_t ECHO_TIMEOUT_US = (uint32_t)MEASURE_MAX_CM * 58 + 2500;
 
 void IRAM_ATTR echoIsr(void *arg) {
