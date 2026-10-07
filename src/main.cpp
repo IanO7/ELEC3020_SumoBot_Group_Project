@@ -480,7 +480,12 @@ void setup() {
   }
 
   stateSinceMs = millis();
-  Serial.println("Sumobot ready - press KEY (GPIO14) to start");
+  if (AUTO_START) {
+    matchStartMs = millis();
+    setState(State::Countdown, "power on");
+  } else {
+    Serial.println("Sumobot ready - press KEY (GPIO14) to start");
+  }
 }
 
 void loop() {

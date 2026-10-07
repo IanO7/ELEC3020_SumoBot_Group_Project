@@ -113,9 +113,9 @@ Do not use GPIO 0, 4–9, 14, 15, 19, 20, 38–42, 45–48. The board uses them 
    - If that still fails, try another USB-C cable. Charge-only cables power the board (red LED on) but can't carry data.
 2. **Unplug USB** from the TTGO.
 3. **Mount/plug the TTGO into the robot** (if it was removed).
-4. **Connect the robot battery.** The screen should turn on and show the sensor view (`sumo` firmware).
+4. **Connect the robot battery.** With `AUTO_START = true` (current setting) the 5 s countdown starts immediately, so place the robot in the ring **before** connecting the battery, or within those 5 s.
 5. **Place the robot** in the ring.
-6. **Press KEY** (right-hand side button). 5 s countdown, then the match starts. Press KEY again to stop.
+6. **Press KEY** (right-hand side button) to start the countdown, only needed if `AUTO_START = false` or after stopping. Press KEY during a match to stop.
 7. **When finished:** press KEY to stop, then disconnect the battery **before** plugging USB back in.
 
 **Test programs:**
@@ -124,7 +124,7 @@ Do not use GPIO 0, 4–9, 14, 15, 19, 20, 38–42, 45–48. The board uses them 
 
 ## How the robot behaves
 
-1. Press **KEY** → 5 s countdown on screen → match starts. Press KEY again to stop; press once more to re-arm.
+1. Power on (`AUTO_START = true`) or press **KEY** → 5 s countdown on screen → match starts. Press KEY to stop; press once more to re-arm, then again to start a new countdown.
 2. Every loop, in priority order:
    - **Edge:** an IR sensor sees the black border → back off and turn away (rear sensor → drive forward).
    - **Attack:** a sonar sees the opponent → steer at it and push (full power when close).

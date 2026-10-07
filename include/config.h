@@ -53,6 +53,10 @@ constexpr uint16_t SONAR_HYST_CM      = 10;  // once seen, keep it until this mu
 
 // --- Match ------------------------------------------------------------
 constexpr uint32_t START_DELAY_MS   = 5000;  // mandatory 5 s after pressing start
+// true = start the 5 s countdown as soon as the robot powers on (no KEY
+// press needed). KEY still stops it. NOTE: a brownout reset will also
+// restart the countdown, so the robot starts driving again by itself.
+constexpr bool     AUTO_START       = true;
 constexpr bool     USE_START_MODULE = false; // true = use IR start module on PIN_START_MODULE
 constexpr int8_t   START_SEARCH_DIR = +1;    // first search spin: +1 right, -1 left
 
