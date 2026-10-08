@@ -208,9 +208,14 @@ static bool runAttack() {
   // same target drifting off-centre: curve after it, don't pivot hard.
   static uint32_t lastMidMs = 0;
   const bool midRecent = lastMidMs && now - lastMidMs < TARGET_LOST_HOLD_MS;
-  const bool l = seen(Sonar::LEFT);
+  bool l = seen(Sonar::LEFT);
   const bool m = seen(Sonar::MID);
-  const bool r = seen(Sonar::RIGHT);
+  bool r = seen(Sonar::RIGHT);
+  if (USE_MID_SONAR && !SIDE_ONLY_ATTACK && !m && !midRecent && (l || r)) {
+    // Side-only reading: don't attack it, just curve the search toward it.
+    lastSeenDir = l ? -1 : +1;
+    l = r = false;
+  }
   auto drive = [&](int16_t left, int16_t right) {
     Motors::drive(left, right);
     lastAttackL = left;
@@ -304,16 +309,23 @@ static void runMatch() {
 
   // Push-through: in contact with the opponent and only our front is on the
   // border -> they're further out than us, so keep pushing for a moment.
+  // The line is narrow: if our sensors cross it onto the (light) area outside
+  // during the push, they read "safe" again - so remember it and escape anyway.
   static uint32_t pushEdgeSinceMs = 0;
   static bool pushingAtEdge = false;
+  static LineState pushLine;
   bool inContact = state == State::Attack && lastContactMs && now - lastContactMs < CONTACT_HOLD_MS;
   if (line.front() && !line.rear() && inContact) {
     if (!pushingAtEdge) {
       pushingAtEdge = true;
       pushEdgeSinceMs = now;
+      pushLine = line;
     }
     if (now - pushEdgeSinceMs < EDGE_PUSH_THROUGH_MS) line = LineState{};
-  } else {
+  } else if (pushingAtEdge) {
+    // Push-through ended (contact lost, or the line is no longer under us
+    // because we crossed it): escape from the edge we hit.
+    if (!line.any()) line = pushLine;
     pushingAtEdge = false;
   }
 

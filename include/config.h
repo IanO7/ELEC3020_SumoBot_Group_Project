@@ -18,9 +18,8 @@ constexpr uint8_t  MOTOR_PWM_BITS    = 8;
 // Running on a 3S LiPo: full power, no ramp. (Weak-battery mode for a 9V
 // PP3 was LIMIT 110, MIN 70, RAMP 400: every non-zero speed squeezed into
 // MIN..LIMIT and acceleration ramped so the battery didn't brown out.)
-// TEMPORARY for testing: 160 (~63%) slows everything down proportionally.
-// Set 255 for full power / competition.
-constexpr uint8_t  MOTOR_SPEED_LIMIT = 160;  // fastest any motor runs (255 = no limit)
+// Lower (e.g. 160) to slow everything down proportionally for testing.
+constexpr uint8_t  MOTOR_SPEED_LIMIT = 255;  // fastest any motor runs (255 = no limit)
 constexpr uint8_t  MOTOR_SPEED_MIN   = 0;    // slowest non-zero speed (0 = no minimum)
 constexpr uint16_t MOTOR_RAMP_MS     = 0;    // ramp 0 -> full speed (0 = instant; try 50 if it resets)
 
@@ -42,11 +41,11 @@ constexpr uint32_t EDGE_CONFIRM_MS = 10;
 // --- Ultrasonic -------------------------------------------------------
 // Ring is ~1 m diameter: from the centre the opponent is always < ~60 cm.
 // Anything further is probably outside the ring (people, walls).
-// TEMPORARY for testing: ~quarter of the 1 m ring (was 60 / 35), so people
-// standing beside the ring don't trigger ATTACK. Restore 60 / 35 for
-// competition (area around the ring is kept clear).
-constexpr uint16_t SONAR_MAX_CM      = 25;   // middle sonar: ignore anything beyond this
-constexpr uint16_t SIDE_MAX_CM       = 15;   // side sonars: only react to close targets (TEMPORARY 15 for testing; normally 35)
+// Ring measured 100 cm. Robots start ~50-60 cm apart, so 70 sees the
+// opponent from the start; spectators stay 3 ft (~90 cm) back, so < ~85 cm
+// won't pick them up. For testing with people close by, use 25 / 15.
+constexpr uint16_t SONAR_MAX_CM      = 70;   // middle sonar: ignore anything beyond this
+constexpr uint16_t SIDE_MAX_CM       = 35;   // side sonars: only react to close targets
 // TEMPORARY (debugging attack rotations): false = sumo code ignores the
 // left/right sonars, so ATTACK only charges straight at middle-sonar targets.
 constexpr bool     USE_SIDE_SONARS   = true;
@@ -56,14 +55,12 @@ constexpr bool     USE_MID_SONAR     = true;
 constexpr uint16_t SONAR_INTERVAL_MS = 30;   // ping period (>= ~25 ms to avoid ghost echoes)
 // Each sonar uses the median of its last 3 readings, so one bad echo
 // (or one missed echo) is ignored. Then:
-constexpr uint8_t  SONAR_HITS_TO_SEE  = 2;   // consecutive (median) hits before a target counts
+constexpr uint8_t  SONAR_HITS_TO_SEE  = 3;   // consecutive (median) hits before a target counts (2 let noise through)
 constexpr uint8_t  SONAR_MISSES_TO_LOSE = 4; // consecutive (median) misses before it is dropped
-constexpr uint16_t SONAR_HYST_CM      = 0;   // once seen, keep it until this much past the max range (TEMPORARY 0 = strict 25 cm; normally 10)
+constexpr uint16_t SONAR_HYST_CM      = 10;  // once seen, keep it until this much past the max range
 
 // --- Match ------------------------------------------------------------
-// TEMPORARY for testing: 0 = no countdown, the match starts immediately.
-// Competition rules require 5 s -> set back to 5000.
-constexpr uint32_t START_DELAY_MS   = 0;     // delay after start before moving (normally 5000)
+constexpr uint32_t START_DELAY_MS   = 5000;  // mandatory 5 s after start (rules); 0 = no countdown for testing
 // true = start the 5 s countdown as soon as the robot powers on (no KEY
 // press needed). KEY still stops it. NOTE: a brownout reset will also
 // restart the countdown, so the robot starts driving again by itself.
@@ -74,14 +71,14 @@ constexpr bool     AUTO_START       = true;
 // TEST_EDGE_ONLY: no attack, no search. Drives straight forward at
 //   EDGE_TEST_SPEED and does the normal edge escape at the border.
 constexpr bool     TEST_ATTACK_ONLY = false;
-constexpr bool     TEST_EDGE_ONLY   = true;
+constexpr bool     TEST_EDGE_ONLY   = false;
 constexpr uint8_t  EDGE_TEST_SPEED  = 140;
 constexpr bool     USE_START_MODULE = false; // true = use IR start module on PIN_START_MODULE
 constexpr int8_t   START_SEARCH_DIR = +1;    // first search spin: +1 right, -1 left
 
 // --- Attack -----------------------------------------------------------
 constexpr uint8_t  ATTACK_SPEED     = 255;   // target close in front: full push
-constexpr uint8_t  APPROACH_SPEED   = 210;   // target ahead but far
+constexpr uint8_t  APPROACH_SPEED   = 255;   // target ahead but far (full power: sumo-style charge as soon as it is seen)
 constexpr uint8_t  TRACK_TURN_SPEED = 220;   // outer wheel when swinging toward a side target (150 stalled the left motor at the 160 speed limit)
 // Inner wheel when turning toward a side target. 0 = inner wheel stopped:
 // the robot swings toward the target AND moves forward, so it still reaches
@@ -93,7 +90,11 @@ constexpr uint16_t CONTACT_CM       = 10;    // closer than this = we're touchin
 constexpr uint32_t CONTACT_HOLD_MS  = 350;   // keep pushing this long after sonar drops out at contact
 // Pushing an opponent and our FRONT reaches the border: they're already
 // over it, so keep pushing this long before escaping. 0 = always escape.
-constexpr uint32_t EDGE_PUSH_THROUGH_MS = 300;
+constexpr uint32_t EDGE_PUSH_THROUGH_MS = 150;  // was 300: robot followed the object out
+// false = a side sonar alone can't start an attack (noise / crosstalk made
+// the robot drive circles at nothing); it just curves the search toward that
+// side. The middle sonar must confirm. Ignored when USE_MID_SONAR is false.
+constexpr bool     SIDE_ONLY_ATTACK     = false;
 
 // --- Anti-jerk --------------------------------------------------------
 // Target briefly lost: keep doing the last attack move this long before
@@ -109,16 +110,19 @@ constexpr uint32_t TRACK_TIMEOUT_MS     = 1500;
 constexpr uint32_t SIDE_IGNORE_MS       = 2000;
 
 // --- Search -----------------------------------------------------------
-constexpr uint8_t  SEARCH_TURN_SPEED = 150;
-constexpr uint8_t  SEARCH_FWD_SPEED  = 140;
-constexpr uint32_t SEARCH_SPIN_MS    = 500;  // short look-around spin, then curve (was 1200 on the slow 9V)
+// Sumo-style search: spin on the spot to sweep the sonar round the ring,
+// then a short forward hop to a new spot, repeat. The spin must be slow
+// enough for the sonar (~0.1 s to confirm a target, ~30 deg beam).
+constexpr uint8_t  SEARCH_TURN_SPEED = 150;  // lower if it spins past targets without seeing them
+constexpr uint8_t  SEARCH_FWD_SPEED  = 200;  // forward hop between spins
+constexpr uint32_t SEARCH_SPIN_MS    = 1200; // TUNE to about one full turn at SEARCH_TURN_SPEED
 // Don't spin again if we already did within this time, and never spin right
 // after an edge escape (the escape already turned us). Stops repeated spins.
 constexpr uint32_t SEARCH_RESPIN_MS  = 3000;
 constexpr uint32_t SEARCH_ADVANCE_MS = 350;
 // true  = spin once, then drive a continuous curve (smooth, no stop-start).
 // false = keep alternating spin SEARCH_SPIN_MS / forward SEARCH_ADVANCE_MS.
-constexpr bool     SEARCH_ARC        = true;
+constexpr bool     SEARCH_ARC        = false;
 constexpr uint8_t  SEARCH_ARC_OUTER  = 200;  // outer wheel speed while curving
 constexpr uint8_t  SEARCH_ARC_INNER  = 40;   // inner wheel (bigger = wider curve)
 
@@ -134,6 +138,7 @@ constexpr uint16_t ESCAPE_FORWARD_MS    = 300;  // pushed back onto the edge
 // --- Display ----------------------------------------------------------
 constexpr bool     ENABLE_DISPLAY     = true;
 constexpr uint32_t DISPLAY_REFRESH_MS = 150;  // live sensor view refresh period
-// Testing: keep the live sensor view updating during a match. Each redraw
-// pauses the control loop for a few ms - set false for competition.
-constexpr bool     DISPLAY_LIVE_IN_MATCH = true;
+// true = keep the live sensor view updating during a match (handy for
+// testing). Each redraw pauses the control loop for a few ms, so off for
+// competition. The state name (ATTACK etc.) still shows either way.
+constexpr bool     DISPLAY_LIVE_IN_MATCH = false;
