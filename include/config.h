@@ -32,8 +32,8 @@ constexpr uint8_t LINE_ACTIVE_LEVEL = HIGH;
 // false = the sumo code ignores the rear sensors (sensor_test still shows
 // them). Use if they're mounted too high and always read "border".
 constexpr bool USE_REAR_EDGE_SENSORS = true;
-// TEMPORARY: rear-right sensor misbehaving -> ignored by the sumo code.
-constexpr bool USE_REAR_RIGHT_SENSOR = false;
+// false = ignore just the rear-right sensor (e.g. if it misreads).
+constexpr bool USE_REAR_RIGHT_SENSOR = true;
 // A sensor must see the border continuously this long before it counts.
 // Filters out motor-noise spikes (a few us-ms) that caused phantom EDGEs.
 constexpr uint32_t EDGE_CONFIRM_MS = 10;
@@ -60,11 +60,8 @@ constexpr uint8_t  SONAR_MISSES_TO_LOSE = 4; // consecutive (median) misses befo
 constexpr uint16_t SONAR_HYST_CM      = 10;  // once seen, keep it until this much past the max range
 
 // --- Match ------------------------------------------------------------
+// Power on -> this countdown -> fight. No start/stop button.
 constexpr uint32_t START_DELAY_MS   = 5000;  // mandatory 5 s after start (rules); 0 = no countdown for testing
-// true = start the 5 s countdown as soon as the robot powers on (no KEY
-// press needed). KEY still stops it. NOTE: a brownout reset will also
-// restart the countdown, so the robot starts driving again by itself.
-constexpr bool     AUTO_START       = true;
 // TEMPORARY TEST MODES - set both false for normal use.
 // TEST_ATTACK_ONLY: edge ignored, no search. Sits still until a sonar sees
 //   something, then attacks it. WILL DRIVE OFF THE RING - test on the floor.
@@ -73,7 +70,6 @@ constexpr bool     AUTO_START       = true;
 constexpr bool     TEST_ATTACK_ONLY = false;
 constexpr bool     TEST_EDGE_ONLY   = false;
 constexpr uint8_t  EDGE_TEST_SPEED  = 140;
-constexpr bool     USE_START_MODULE = false; // true = use IR start module on PIN_START_MODULE
 constexpr int8_t   START_SEARCH_DIR = +1;    // first search spin: +1 right, -1 left
 
 // --- Attack -----------------------------------------------------------
@@ -138,7 +134,7 @@ constexpr uint16_t ESCAPE_FORWARD_MS    = 300;  // pushed back onto the edge
 // --- Display ----------------------------------------------------------
 constexpr bool     ENABLE_DISPLAY     = true;
 constexpr uint32_t DISPLAY_REFRESH_MS = 150;  // live sensor view refresh period
-// true = keep the live sensor view updating during a match (handy for
-// testing). Each redraw pauses the control loop for a few ms, so off for
-// competition. The state name (ATTACK etc.) still shows either way.
-constexpr bool     DISPLAY_LIVE_IN_MATCH = false;
+// Keep the sonar/edge boxes updating during the match (shows where the
+// opponent is detected - required by the brief). Only boxes that changed are
+// redrawn, so the cost to the control loop is small.
+constexpr bool     DISPLAY_LIVE_IN_MATCH = true;

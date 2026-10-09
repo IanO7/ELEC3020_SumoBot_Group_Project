@@ -6,8 +6,7 @@
 //    2. ATTACK - a sonar sees the opponent -> steer at it and push
 //    3. SEARCH - spin toward where it was last seen, then reposition
 //
-//  Start: press the KEY button (GPIO14) -> 5 s countdown -> fight.
-//  Press KEY again at any time to stop. Press once more to re-arm.
+//  Start: power on -> START_DELAY_MS countdown -> fight until power off.
 // =====================================================================
 #include <Arduino.h>
 #include <TFT_eSPI.h>
@@ -21,21 +20,19 @@
 // --------------------------------------------------------------------
 //  State
 // --------------------------------------------------------------------
-enum class State : uint8_t { Idle, Countdown, Search, Attack, Escape, Stopped };
+enum class State : uint8_t { Countdown, Search, Attack, Escape };
 
 static const char *stateName(State s) {
   switch (s) {
-    case State::Idle:      return "READY";
     case State::Countdown: return "COUNTDOWN";
     case State::Search:    return "SEARCH";
     case State::Attack:    return "ATTACK";
     case State::Escape:    return "EDGE!";
-    case State::Stopped:   return "STOPPED";
   }
   return "?";
 }
 
-static State state = State::Idle;
+static State state = State::Countdown;  // starts on power-on
 static uint32_t stateSinceMs = 0;
 static int8_t lastSeenDir = START_SEARCH_DIR;  // -1 left, +1 right
 static uint32_t lastContactMs = 0;             // last time mid sonar saw it touching us
@@ -46,20 +43,7 @@ static uint32_t searchPhaseSinceMs = 0;
 static bool searchSpinning = true;
 static uint32_t lastSearchSpinMs = 0;  // when search last started a spin
 
-static bool inMatch() {
-  return state == State::Search || state == State::Attack || state == State::Escape;
-}
-
-// Last few state changes + why, shown on screen after STOP (debugging).
-struct LogEntry {
-  uint32_t ms;
-  State state;
-  char why[16];
-};
-static constexpr uint8_t LOG_SIZE = 7;
-static LogEntry stateLog[LOG_SIZE];
-static uint32_t logCount = 0;  // entries this match (wraps around the buffer)
-static uint32_t matchStartMs = 0;
+static bool inMatch() { return state != State::Countdown; }
 
 static void setState(State s, const char *why = "") {
   if (s == state) return;
@@ -73,17 +57,11 @@ static void setState(State s, const char *why = "") {
     if (searchSpinning) lastSearchSpinMs = stateSinceMs;
     searchPhaseSinceMs = stateSinceMs;
   }
-  if (s == State::Countdown) lastSearchSpinMs = 0;  // new match: first search spins
-  if (s == State::Countdown) logCount = 0;
-  LogEntry &e = stateLog[logCount++ % LOG_SIZE];
-  e.ms = stateSinceMs - matchStartMs;
-  e.state = s;
-  strncpy(e.why, why, sizeof e.why - 1);
-  e.why[sizeof e.why - 1] = 0;
   Serial.printf("[%lu] -> %s %s\n", (unsigned long)stateSinceMs, stateName(s), why);
 }
 
-// "L0 M45 R0" summary of what the sonars currently see (0 = nothing).
+// "L0 M45 R0" summary of what the sonars currently see (0 = nothing), for
+// the serial log.
 static const char *sonarWhy() {
   static char buf[16];
   auto d = [](Sonar::Side s) { return Sonar::sees(s) ? (int)Sonar::distanceCm(s) : 0; };
@@ -355,41 +333,13 @@ static void runMatch() {
 }
 
 // --------------------------------------------------------------------
-//  Start / stop input
-// --------------------------------------------------------------------
-static bool buttonPressed() {
-  static bool lastLevel = HIGH;
-  static uint32_t lastChangeMs = 0;
-  bool level = digitalRead(PIN_BTN_START);
-  uint32_t now = millis();
-  if (level != lastLevel && now - lastChangeMs > 40) {
-    lastChangeMs = now;
-    lastLevel = level;
-    return level == LOW;  // falling edge = press
-  }
-  return false;
-}
-
-static void handleStartStop() {
-  if (USE_START_MODULE) {
-    bool go = digitalRead(PIN_START_MODULE) == HIGH;
-    if (go && state == State::Idle) {
-      matchStartMs = millis();
-      setState(State::Search, "start module");
-    }  // module handles the delay
-    if (!go && inMatch()) setState(State::Stopped, "start module");
-  }
-
-  if (!buttonPressed()) return;
-  switch (state) {
-    case State::Idle:    matchStartMs = millis(); setState(State::Countdown, "KEY"); break;
-    case State::Stopped: setState(State::Idle, "KEY"); break;
-    default:             setState(State::Stopped, "KEY"); break;  // countdown or fighting
-  }
-}
-
-// --------------------------------------------------------------------
-//  Display (only redraws small regions; never blocks the fight)
+//  Display (320x170). Only redraws what changed, so it can stay live
+//  during the match without slowing the control loop.
+//
+//   4.02V                          reset: power on
+//               ATTACK                    <- state, large + centred
+//   [  L  --  ] [  M  42  ] [  R  --  ]   <- sonar zones, RED = target seen
+//   [ FL ] [ FR ] [ RL ] [ RR ]           <- edge sensors, RED = border
 // --------------------------------------------------------------------
 static TFT_eSPI tft;
 
@@ -398,19 +348,12 @@ static uint16_t stateColor(State s) {
     case State::Attack:    return TFT_RED;
     case State::Escape:    return TFT_YELLOW;
     case State::Search:    return TFT_CYAN;
-    case State::Countdown: return TFT_ORANGE;
-    case State::Stopped:   return TFT_DARKGREY;
-    default:               return TFT_GREEN;
+    default:               return TFT_ORANGE;  // countdown
   }
 }
 
 static void drawStatic() {
   tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  tft.drawString("ELEC3020 SUMO", 4, 4, 2);
-  tft.drawString("KEY: start/stop", 200, 4, 2);
-  tft.drawString("SONAR L / M / R (cm)", 4, 96, 2);
-  tft.drawString("EDGE", 4, 136, 2);
 
   // Why did we (re)boot? BROWNOUT = battery sagged when the motors started.
   const char *why = "?";
@@ -427,112 +370,116 @@ static void drawStatic() {
   }
   char buf[32];
   snprintf(buf, sizeof buf, "reset: %s", why);
+  tft.setTextDatum(TR_DATUM);
   tft.setTextColor(esp_reset_reason() == ESP_RST_BROWNOUT ? TFT_RED : TFT_DARKGREY, TFT_BLACK);
-  tft.drawString(buf, 200, 28, 2);
+  tft.drawString(buf, 316, 2, 2);
+  tft.setTextDatum(TL_DATUM);
 }
 
-static void drawEdgeBox(int x, int y, const char *label, bool active, bool enabled = true) {
-  tft.fillRoundRect(x, y, 44, 22, 4, !enabled ? TFT_DARKGREY : active ? TFT_RED : TFT_NAVY);
-  tft.setTextColor(active || !enabled ? TFT_WHITE : TFT_LIGHTGREY);
-  tft.drawCentreString(label, x + 22, y + 3, 2);
+// Large centred state name (or "START IN n" during the countdown).
+static void drawState(const char *text, uint16_t color) {
+  tft.fillRect(0, 18, 320, 44, TFT_BLACK);
+  tft.setFreeFont(&FreeSansBold24pt7b);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(color);
+  tft.drawString(text, 160, 40);
+  tft.setTextFont(2);
+  tft.setTextDatum(TL_DATUM);
 }
+
+// A rounded box with a small label and an optional centred value. Each box
+// remembers what it last showed and is only redrawn when that changes.
+struct Box {
+  int16_t x, y, w, h;
+  const char *label;
+  uint16_t lastColor;
+  char lastValue[8];
+  bool drawn;
+};
+
+static void drawBox(Box &b, uint16_t color, const char *value) {
+  if (b.drawn && b.lastColor == color && strcmp(b.lastValue, value) == 0) return;
+  b.drawn = true;
+  b.lastColor = color;
+  strncpy(b.lastValue, value, sizeof b.lastValue - 1);
+  b.lastValue[sizeof b.lastValue - 1] = 0;
+
+  tft.fillRoundRect(b.x, b.y, b.w, b.h, 6, color);
+  uint16_t text = color == TFT_NAVY ? TFT_LIGHTGREY : TFT_WHITE;
+  tft.setTextColor(text);
+  if (value[0]) {
+    tft.setTextDatum(TL_DATUM);
+    tft.drawString(b.label, b.x + 6, b.y + 3, 2);  // small label top-left
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString(value, b.x + b.w / 2 + 6, b.y + b.h / 2 + 2, 4);
+  } else {
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString(b.label, b.x + b.w / 2, b.y + b.h / 2 + 1, 2);  // label only
+  }
+  tft.setTextDatum(TL_DATUM);
+}
+
+// Sonar zones (3 x 96 wide) and edge sensors (4 x 70 wide), centred.
+static Box sonarBox[3] = {{8, 70, 96, 44, "L"}, {112, 70, 96, 44, "M"}, {216, 70, 96, 44, "R"}};
+static Box edgeBox[4] = {{8, 122, 70, 26, "FL"}, {86, 122, 70, 26, "FR"},
+                         {164, 122, 70, 26, "RL"}, {242, 122, 70, 26, "RR"}};
 
 static void drawLive() {
-  char buf[32];
-
-  // Small line under the state: where the opponent is detected. Skipped in
-  // the countdown, which uses this area for its digits.
-  if (state != State::Countdown) {
-    char t[48];
-    int n = snprintf(t, sizeof t, "TARGET:");
-    const char *names[3] = {"L", "M", "R"};
-    const Sonar::Side ss[3] = {Sonar::LEFT, Sonar::MID, Sonar::RIGHT};
-    bool any = false;
-    for (int i = 0; i < 3; i++) {
-      if (!Sonar::sees(ss[i])) continue;
-      any = true;
-      n += snprintf(t + n, sizeof t - n, " %s %dcm", names[i], (int)Sonar::distanceCm(ss[i]));
-    }
-    if (!any) snprintf(t, sizeof t, "TARGET: none (range %d cm)", SONAR_MAX_CM);
-    tft.setTextPadding(312);
-    tft.setTextColor(any ? TFT_RED : TFT_DARKGREY, TFT_BLACK);
-    tft.drawString(t, 4, 76, 2);
-
-    // What the code is telling the motors (-255..255, before the speed limit).
-    snprintf(t, sizeof t, "MOTORS  L %4d   R %4d", Motors::lastLeft(), Motors::lastRight());
-    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    tft.drawString(t, 4, 58, 2);
+  // Sonar zones: raw distance inside, RED when that sonar has the target.
+  const Sonar::Side sides[3] = {Sonar::LEFT, Sonar::MID, Sonar::RIGHT};
+  const bool enabled[3] = {USE_SIDE_SONARS, USE_MID_SONAR, USE_SIDE_SONARS};
+  for (int i = 0; i < 3; i++) {
+    char v[8];
+    int cm = Sonar::rawCm(sides[i]);
+    if (cm > 0) snprintf(v, sizeof v, "%d", cm);
+    else snprintf(v, sizeof v, "--");
+    uint16_t c = !enabled[i] ? TFT_DARKGREY : Sonar::sees(sides[i]) ? TFT_RED : TFT_NAVY;
+    drawBox(sonarBox[i], c, v);
   }
 
-  tft.setTextPadding(312);
-
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  auto cm = [](Sonar::Side s) { return (int)Sonar::rawCm(s); };
-  snprintf(buf, sizeof buf, "%4d %4d %4d", cm(Sonar::LEFT), cm(Sonar::MID), cm(Sonar::RIGHT));
-  tft.drawString(buf, 4, 112, 2);
-
+  // Edge sensors: RED on the border, grey if disabled.
   LineState line = Line::read();
-  drawEdgeBox(50, 132, "FL", line.frontLeft);
-  drawEdgeBox(98, 132, "FR", line.frontRight);
-  drawEdgeBox(146, 132, "RL", line.rearLeft, USE_REAR_EDGE_SENSORS);
-  drawEdgeBox(194, 132, "RR", line.rearRight, USE_REAR_EDGE_SENSORS && USE_REAR_RIGHT_SENSOR);
+  const bool on[4] = {line.frontLeft, line.frontRight, line.rearLeft, line.rearRight};
+  const bool en[4] = {true, true, USE_REAR_EDGE_SENSORS,
+                      USE_REAR_EDGE_SENSORS && USE_REAR_RIGHT_SENSOR};
+  for (int i = 0; i < 4; i++) {
+    drawBox(edgeBox[i], !en[i] ? TFT_DARKGREY : on[i] ? TFT_RED : TFT_NAVY, "");
+  }
 
-  float vbat = analogReadMilliVolts(PIN_BATTERY) * 2 / 1000.0f;
-  snprintf(buf, sizeof buf, "%.2fV", vbat);
+  // Battery voltage, top-left.
+  char buf[12];
+  snprintf(buf, sizeof buf, "%.2fV", analogReadMilliVolts(PIN_BATTERY) * 2 / 1000.0f);
   tft.setTextPadding(60);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  tft.drawString(buf, 252, 136, 2);
-}
-
-// After STOP: the last state changes of the match, oldest first.
-static void drawLog() {
-  tft.fillRect(0, 56, 320, 114, TFT_BLACK);
+  tft.drawString(buf, 4, 2, 2);
   tft.setTextPadding(0);
-  uint8_t n = logCount < LOG_SIZE ? logCount : LOG_SIZE;
-  for (uint8_t i = 0; i < n; i++) {
-    const LogEntry &e = stateLog[(logCount - n + i) % LOG_SIZE];
-    char buf[40];
-    snprintf(buf, sizeof buf, "%6.2fs %-9s %s", e.ms / 1000.0f, stateName(e.state), e.why);
-    tft.setTextColor(stateColor(e.state), TFT_BLACK);
-    tft.drawString(buf, 4, 56 + i * 16, 2);
-  }
 }
 
 static void updateDisplay() {
   if (!ENABLE_DISPLAY) return;
-  static State shown = State::Stopped;
+  static bool first = true;
+  static State shown;
   static int lastSecs = -1;
   static uint32_t lastLiveMs = 0;
   uint32_t now = millis();
 
-  if (state != shown) {
-    if (shown == State::Stopped) drawStatic();  // leaving the log screen
-    shown = state;
-    lastSecs = -1;
-    tft.setTextPadding(312);
-    tft.setTextColor(stateColor(state), TFT_BLACK);
-    tft.drawString(stateName(state), 4, 28, 4);
-    if (state != State::Countdown) tft.drawString("", 4, 56, 4);
-    if (state == State::Stopped) {
-      drawLog();
-      return;
-    }
-  }
-  if (state == State::Stopped) return;  // keep the log on screen
-
   if (state == State::Countdown) {
     int secs = (START_DELAY_MS - (now - stateSinceMs) + 999) / 1000;
-    if (secs != lastSecs) {
+    if (first || secs != lastSecs) {
+      first = false;
+      shown = state;
       lastSecs = secs;
-      char buf[8];
-      snprintf(buf, sizeof buf, "%d", secs);
-      tft.setTextPadding(312);
-      tft.setTextColor(TFT_ORANGE, TFT_BLACK);
-      tft.drawString(buf, 4, 56, 4);
+      char buf[16];
+      snprintf(buf, sizeof buf, "START IN %d", secs);
+      drawState(buf, TFT_ORANGE);
     }
+  } else if (first || state != shown) {
+    first = false;
+    shown = state;
+    drawState(stateName(state), stateColor(state));
   }
 
-  // Live sensor view: always before/after a match, during it only if enabled.
+  // Live sensor view: always during the countdown, in the match only if enabled.
   if ((!inMatch() || DISPLAY_LIVE_IN_MATCH) && now - lastLiveMs >= DISPLAY_REFRESH_MS) {
     lastLiveMs = now;
     drawLive();
@@ -548,8 +495,6 @@ void setup() {
 
   Serial.begin(115200);
   Serial.setTxTimeoutMs(0);  // never stall the control loop when USB is unplugged
-  pinMode(PIN_BTN_START, INPUT_PULLUP);
-  if (USE_START_MODULE) pinMode(PIN_START_MODULE, INPUT_PULLDOWN);
 
   Sonar::begin();
   Line::begin();
@@ -562,35 +507,19 @@ void setup() {
     drawStatic();
   }
 
+  // Countdown starts now (state begins as Countdown); then fight forever.
   stateSinceMs = millis();
-  if (AUTO_START) {
-    matchStartMs = millis();
-    setState(State::Countdown, "power on");
-  } else {
-    Serial.println("Sumobot ready - press KEY (GPIO14) to start");
-  }
+  Serial.println("Sumobot: countdown started");
 }
 
 void loop() {
   Sonar::update();
-  handleStartStop();
 
-  switch (state) {
-    case State::Idle:
-      Motors::coast();  // motors at 0 (both driver inputs off)
-      break;
-    case State::Stopped:
-      // Brake briefly so it stops quickly, then motors at 0.
-      if (millis() - stateSinceMs < 300) Motors::brake();
-      else Motors::coast();
-      break;
-    case State::Countdown:
-      Motors::coast();
-      if (millis() - stateSinceMs >= START_DELAY_MS) setState(State::Search, "go");
-      break;
-    default:
-      runMatch();
-      break;
+  if (state == State::Countdown) {
+    Motors::coast();  // motors at 0 until the countdown ends
+    if (millis() - stateSinceMs >= START_DELAY_MS) setState(State::Search, "go");
+  } else {
+    runMatch();
   }
 
   updateDisplay();

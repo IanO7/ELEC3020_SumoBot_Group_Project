@@ -9,12 +9,12 @@ Sumobot firmware for the **LILYGO T-Display-S3** (ESP32-S3), built with Platform
 | Upload / flashing | ✅ Works (use BOOT + RST if no COM port appears). Disconnect the battery while uploading: GPIO44 (right motor) is HIGH during reset/upload and spins the right wheel |
 | Motors | ✅ Both directions both wheels. Left = MDD3A M1 (GPIO17/18, `LEFT_MOTOR_INVERTED = true`), right = M2 (GPIO44/3). Loose signal wire fixed 7 Oct |
 | Sonars | ✅ All 3 working. Middle had a loose contact (fixed 8 Oct). Ranges for the 100 cm ring: middle 70 cm, sides 35 cm |
-| IR edge sensors | ✅ Front-left, front-right, rear-left. ⚠️ **Rear-right ignored** (`USE_REAR_RIGHT_SENSOR = false`): reads black on white, needs lowering/adjusting |
+| IR edge sensors | ✅ All 4 enabled (rear-right fixed and re-enabled 9 Oct) |
 | Edge escape | ✅ Works well at full speed on the practice mat (white ring, black border) |
 | Search / attack | ✅ Finds and pushes objects out. 8 Oct changes **not yet tested** (battery ran out): sumo-style spin-and-hop search, full-power charge, push-through escapes even after crossing the line, side sonars only steer (middle must confirm), 3 readings per target |
 | Power | ✅ 3S LiPo, full motor power |
 
-All settings in `include/config.h` are at competition values except the rear-right IR.
+All settings in `include/config.h` are at competition values.
 
 ### Next session (9 Oct)
 
@@ -24,8 +24,7 @@ All settings in `include/config.h` are at competition values except the rear-rig
    - Box (>= 10 cm tall) in 4-5 positions: finds it and pushes it out each time.
    - Box at the edge: pushes it out and does **not** follow it out.
 3. **Tune:** `SEARCH_SPIN_MS` = about one full turn; lower `SEARCH_TURN_SPEED` if it spins past the box without seeing it; `EDGE_PUSH_THROUGH_MS` (0-250) if it still follows the object out or backs off too early.
-4. Fix the rear-right IR, check it in `sensor_test`, then set `USE_REAR_RIGHT_SENSOR = true`.
-5. Before week 12: confirm whether starting on power-on (`AUTO_START = true`) is allowed or a button start is needed.
+4. Before week 12: confirm starting on power-on (no start button) is allowed in the competition.
 
 ### Test modes (`include/config.h`)
 
@@ -37,9 +36,9 @@ All settings in `include/config.h` are at competition values except the rear-rig
 | `MOTOR_SPEED_LIMIT = 160` | Slow everything down for testing |
 | `SONAR_MAX_CM = 25`, `SIDE_MAX_CM = 15` | Short range when people are near the ring |
 | `START_DELAY_MS = 0` | No countdown |
-| `DISPLAY_LIVE_IN_MATCH = true` | Live sensor/TARGET/MOTORS readout during matches |
+| `DISPLAY_LIVE_IN_MATCH = false` | Freeze the sonar/edge boxes during the match (on by default) |
 
-Screen during a match: state name, `MOTORS L .. R ..` (commanded speeds) and `TARGET: M 40cm` (which sonar sees the opponent; red = detected). After STOP, the last 7 state changes are listed with reasons.
+Screen: large state name in the middle (`START IN 5`, `SEARCH`, `ATTACK`, `EDGE!`); three sonar boxes **L / M / R** with the distance inside, turning **red when that zone sees the opponent**; four edge boxes **FL / FR / RL / RR**, red on the border; battery voltage top-left, reset reason top-right.
 
 Single-motor tests (runs on battery, step + GPIO shown on screen): `pio run -e left_motor_test -t upload` / `right_motor_test`.
 
@@ -86,8 +85,8 @@ Source of truth is `include/pins.h`. If this table and that file disagree, the f
 | IR rear-left | 43 | U0TXD, may glitch briefly during boot |
 | Left motor (MDD3A M1A / M1B) | 17 / 18 | M1B = forward, so `LEFT_MOTOR_INVERTED = true` |
 | Right motor (MDD3A M2A / M2B) | 44 / 3 | M2A = forward |
-| Start/stop button | 14 | On-board **KEY**, the right-hand side button (the other side button is BOOT) |
-| Start module (optional) | 21 | Only if `USE_START_MODULE = true` |
+| KEY button | 14 | On-board, right-hand side button. Not used by `sumo` (starts on power-on); used to start `motor_test` / single motor tests |
+| Spare | 21 | Free GPIO (was the optional start module; removed) |
 
 **Hardware:** Cytron **MDD3A** motor driver (4–16V, 3A continuous per channel, PWM up to 20 kHz) and two **12V 200RPM 25D high-power gearmotors**. Connect the motor driver GND to the ESP32 GND.
 
@@ -104,10 +103,8 @@ Do not use GPIO 0, 4–9, 14, 15, 19, 20, 38–42, 45–48. The board uses them 
    - If that still fails, try another USB-C cable. Charge-only cables power the board (red LED on) but can't carry data.
 2. **Unplug USB** from the TTGO.
 3. **Mount/plug the TTGO into the robot** (if it was removed).
-4. **Connect the robot battery.** With `AUTO_START = true` (current setting) the 5 s countdown starts immediately, so place the robot in the ring **before** connecting the battery.
-5. **Place the robot** in the ring.
-6. **Press KEY** (right-hand side button) during a match to stop. After stopping: KEY → READY, KEY again → new countdown. (If `AUTO_START = false`, press KEY to start the first countdown.)
-7. **When finished:** press KEY to stop, then disconnect the battery **before** plugging USB back in.
+4. **Place the robot in the ring, then connect the battery.** The 5 s countdown starts immediately and the match runs until the battery is disconnected. There is no start/stop button.
+5. **To stop:** pick the robot up and disconnect the battery. Disconnect it **before** plugging USB back in.
 
 **Test programs:**
 - `motor_test`: flash, unplug USB, connect battery, press KEY, then watch the wheels. Serial output isn't needed because the step order is fixed (see checklist below).
@@ -115,7 +112,7 @@ Do not use GPIO 0, 4–9, 14, 15, 19, 20, 38–42, 45–48. The board uses them 
 
 ## How the robot behaves
 
-1. Power on (`AUTO_START = true`) or press **KEY** → 5 s countdown on screen → match starts. Press KEY to stop; press once more to re-arm, then again to start a new countdown.
+1. Power on → 5 s countdown on screen → match starts and runs until the battery is disconnected.
 2. Every loop, in priority order:
    - **Edge:** an IR sensor sees the black border → back off and turn away (rear sensor → drive forward).
    - **Attack:** the middle sonar sees the opponent → full-power charge, side sonars steer to keep it centred.
@@ -172,7 +169,7 @@ Tester: ________ Date: ________
 | Test | Pass? | Value tried → final | Notes |
 |---|---|---|---|
 | Countdown is 5 s and the robot stays still during it | ☐ | | |
-| KEY stops the robot immediately | ☐ | | |
+| Disconnecting the battery stops the robot | ☐ | | |
 | Drives at the front edge → backs off before falling (`ESCAPE_REVERSE_MS` = 250) | ☐ | | |
 | Turns away from the edge far enough (`ESCAPE_TURN_MS` = 220) | ☐ | | |
 | Both front sensors on the edge → turns about 180° (`ESCAPE_TURN_180_MS` = 400) | ☐ | | |

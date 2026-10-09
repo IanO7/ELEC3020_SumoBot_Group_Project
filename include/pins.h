@@ -41,8 +41,8 @@ constexpr uint8_t PIN_MOTOR_L_IN1 = 17;  // M1A
 constexpr uint8_t PIN_MOTOR_L_IN2 = 18;  // M1B
 
 // --- Start / stop -----------------------------------------------------
-constexpr uint8_t PIN_BTN_START    = 14;  // on-board KEY button (active LOW)
-constexpr uint8_t PIN_START_MODULE = 21;  // optional IR start module signal (HIGH = go) - only free GPIO left
+constexpr uint8_t PIN_BTN_START    = 14;  // on-board KEY button (active LOW) - used by the test programs only
+constexpr uint8_t PIN_START_MODULE = 21;  // spare (start module support removed) - only free GPIO left
 
 // --- Board ------------------------------------------------------------
 constexpr uint8_t PIN_LCD_POWER = 15;
