@@ -17,7 +17,7 @@ struct Echo {
   volatile bool done;
   // Owned by update()
   bool resolved;
-  int16_t history[3];  // last 3 raw readings (-1 = none) for the median
+  int16_t history[3];  // last 3 raw readings (999 = none) for the median
   uint8_t histIdx;
   int16_t rawCm;
   int16_t distCm;

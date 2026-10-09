@@ -3,8 +3,8 @@
 // ---------------------------------------------------------------------
 //  Priority every loop (loop is non-blocking, runs at kHz rates):
 //    1. EDGE   - an IR sensor sees the (black) border -> timed escape
-//    2. ATTACK - a sonar sees the opponent -> steer at it and push
-//    3. SEARCH - spin toward where it was last seen, then reposition
+//    2. ATTACK - middle sonar sees the opponent -> full-power charge
+//    3. SEARCH - spin toward where it was last seen, then hop forward
 //
 //  Start: power on -> (optional START_DELAY_MS countdown) -> fight until power off.
 // =====================================================================
@@ -336,7 +336,7 @@ static void runMatch() {
 //  Display (320x170). Only redraws what changed, so it can stay live
 //  during the match without slowing the control loop.
 //
-//   4.02V                          reset: power on
+//   4.02V          GROUP 5          reset: power on
 //               ATTACK                    <- state, large + centred
 //   [  L  --  ] [  M  42  ] [  R  --  ]   <- sonar zones, RED = target seen
 //   [ FL ] [ FR ] [ RL ] [ RR ]           <- edge sensors, RED = border
@@ -369,6 +369,12 @@ static void drawStatic() {
     default: break;
   }
   char buf[32];
+  // Group number, top centre (the brief requires it to be clearly shown).
+  snprintf(buf, sizeof buf, "GROUP %d", GROUP_NUMBER);
+  tft.setTextDatum(TC_DATUM);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.drawString(buf, 160, 2, 2);
+
   snprintf(buf, sizeof buf, "reset: %s", why);
   tft.setTextDatum(TR_DATUM);
   tft.setTextColor(esp_reset_reason() == ESP_RST_BROWNOUT ? TFT_RED : TFT_DARKGREY, TFT_BLACK);
@@ -489,7 +495,7 @@ static void updateDisplay() {
 // --------------------------------------------------------------------
 
 void setup() {
-  // Motors first so the bot can never twitch on boot.
+  // Motors off first thing.
   Motors::begin();
   Motors::coast();
 
@@ -507,7 +513,7 @@ void setup() {
     drawStatic();
   }
 
-  // Countdown starts now (state begins as Countdown); then fight forever.
+  // State starts as Countdown (0 ms by default), then fights until power off.
   stateSinceMs = millis();
   Serial.println("Sumobot: started");
 }

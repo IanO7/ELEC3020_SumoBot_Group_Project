@@ -1,4 +1,4 @@
-# ELEC3020_SumoBot_Group_Project
+# ELEC3020_SumoBot_Group_Project - Group 5
 
 Autonomous sumobot firmware for the **LILYGO T-Display-S3** (ESP32-S3), built with PlatformIO. Group project for ELEC3020 (UWA): find the opponent in a ~100 cm ring and push it out without leaving the ring.
 
@@ -87,7 +87,7 @@ Power on → match starts immediately and runs until the battery is disconnected
 2. **Attack** - the middle sonar sees a target within 70 cm (3 readings in a row) → **full-power charge**; side sonars steer to keep it centred. A side sonar alone doesn't start an attack, it turns the search toward that side.
 3. **Search** - spin on the spot (about one full turn) toward where the opponent was last seen, then a short forward hop, repeat.
 
-**Screen:** large state name (`SEARCH` cyan, `ATTACK` red, `EDGE!` yellow); three sonar boxes **L / M / R** with the distance inside, **red when that zone sees the opponent**; four edge boxes **FL / FR / RL / RR**, red on the border, grey if disabled; voltage top-left; reset reason top-right (`BROWNOUT` in red = battery sagged).
+**Screen:** large state name (`SEARCH` cyan, `ATTACK` red, `EDGE!` yellow); three sonar boxes **L / M / R** with the distance inside, **red when that zone sees the opponent**; four edge boxes **FL / FR / RL / RR**, red on the border, grey if disabled; group number top-centre; voltage top-left; reset reason top-right (`BROWNOUT` in red = battery sagged).
 
 ## Test modes and useful settings (`include/config.h`)
 
