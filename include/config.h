@@ -25,9 +25,9 @@ constexpr uint16_t MOTOR_RAMP_MS     = 0;    // ramp 0 -> full speed (0 = instan
 
 // --- IR edge sensors --------------------------------------------------
 // Level a sensor outputs when it sees the ring BORDER.
-// Our ring is WHITE inside with a BLACK border. TCRT5000 modules output
-// HIGH on black (no reflection) -> HIGH. A standard black ring with a
-// white border would need LOW.
+// Our ring is WHITE inside with a BLACK border. Our Maker Reflect IR
+// sensors read HIGH over black (tested in sensor_test) -> HIGH. A standard
+// black ring with a white border would need LOW.
 constexpr uint8_t LINE_ACTIVE_LEVEL = HIGH;
 // false = the sumo code ignores the rear sensors (sensor_test still shows
 // them). Use if they're mounted too high and always read "border".
@@ -60,8 +60,10 @@ constexpr uint8_t  SONAR_MISSES_TO_LOSE = 4; // consecutive (median) misses befo
 constexpr uint16_t SONAR_HYST_CM      = 10;  // once seen, keep it until this much past the max range
 
 // --- Match ------------------------------------------------------------
-// Power on -> this countdown -> fight. No start/stop button.
-constexpr uint32_t START_DELAY_MS   = 5000;  // mandatory 5 s after start (rules); 0 = no countdown for testing
+// Power on -> this delay -> fight. No start/stop button.
+// 0 = straight into the match on power-on (also straight back in after any
+// reset/brownout). Set 5000 for a 5 s countdown if the rules require it.
+constexpr uint32_t START_DELAY_MS   = 0;
 // TEMPORARY TEST MODES - set both false for normal use.
 // TEST_ATTACK_ONLY: edge ignored, no search. Sits still until a sonar sees
 //   something, then attacks it. WILL DRIVE OFF THE RING - test on the floor.

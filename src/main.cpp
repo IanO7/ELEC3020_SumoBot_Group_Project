@@ -6,7 +6,7 @@
 //    2. ATTACK - a sonar sees the opponent -> steer at it and push
 //    3. SEARCH - spin toward where it was last seen, then reposition
 //
-//  Start: power on -> START_DELAY_MS countdown -> fight until power off.
+//  Start: power on -> (optional START_DELAY_MS countdown) -> fight until power off.
 // =====================================================================
 #include <Arduino.h>
 #include <TFT_eSPI.h>
@@ -509,7 +509,7 @@ void setup() {
 
   // Countdown starts now (state begins as Countdown); then fight forever.
   stateSinceMs = millis();
-  Serial.println("Sumobot: countdown started");
+  Serial.println("Sumobot: started");
 }
 
 void loop() {
