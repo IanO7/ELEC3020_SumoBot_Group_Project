@@ -11,6 +11,7 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 #include <esp_system.h>
+#include <soc/rtc_cntl_reg.h>
 
 #include "config.h"
 #include "motors.h"
@@ -160,7 +161,7 @@ static void runEscape() {
     setState(State::Attack, sonarWhy());
     return;
   }
-  Motors::drive(s.left, s.right);
+  Motors::drive(s.left, s.right, ESCAPE_RAMP_MS);  // short ramp: sharp, but no brownout
 }
 
 // --------------------------------------------------------------------
@@ -204,14 +205,19 @@ static bool runAttack() {
   if (m) {
     lastMidMs = now;
     int16_t d = Sonar::distanceCm(Sonar::MID);
-    if (d > 0 && d <= (int16_t)CONTACT_CM) lastContactMs = now;
+    const bool touching = d > 0 && d <= (int16_t)CONTACT_CM;
+    if (touching) lastContactMs = now;
     int16_t speed = (d > 0 && d <= (int16_t)CLOSE_CM) ? ATTACK_SPEED : APPROACH_SPEED;
-    int16_t inner = speed * STEER_RATIO;
+    int16_t inner = speed * (touching ? CONTACT_STEER_RATIO : STEER_RATIO);
+    // A side reading much nearer/further than the middle one is a different
+    // object - steering at it makes us circle off the real target.
+    auto same = [&](Sonar::Side s) { return abs(Sonar::distanceCm(s) - d) <= (int)SIDE_MATCH_CM; };
+    const bool sl = l && same(Sonar::LEFT), sr = r && same(Sonar::RIGHT);
 
-    if (l && !r) {
+    if (sl && !sr) {
       lastSeenDir = -1;
       drive(inner, speed);
-    } else if (r && !l) {
+    } else if (sr && !sl) {
       lastSeenDir = +1;
       drive(speed, inner);
     } else {
@@ -498,6 +504,7 @@ void setup() {
   // Motors off first thing.
   Motors::begin();
   Motors::coast();
+  if (DISABLE_BROWNOUT_RESET) WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);  // see config.h
 
   Serial.begin(115200);
   Serial.setTxTimeoutMs(0);  // never stall the control loop when USB is unplugged

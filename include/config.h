@@ -16,9 +16,16 @@ constexpr uint8_t  MOTOR_PWM_BITS    = 8;
 // --- Motor power ------------------------------------------------------
 // Every non-zero speed is scaled into MIN..LIMIT. Lower LIMIT (e.g. 160)
 // to slow everything down for testing. For a weak battery: 110 / 70 / 400.
-constexpr uint8_t  MOTOR_SPEED_LIMIT = 255;  // fastest any motor runs (255 = full power)
+constexpr uint8_t  MOTOR_SPEED_LIMIT = 220;  // fastest any motor runs (255 = full power; lowered to 220 for brownouts when pushing)
 constexpr uint8_t  MOTOR_SPEED_MIN   = 0;    // slowest non-zero speed (0 = no minimum)
-constexpr uint16_t MOTOR_RAMP_MS     = 0;    // ramp time 0 -> full speed (0 = instant; try 50 if it browns out)
+constexpr uint16_t MOTOR_RAMP_MS     = 120;  // search/attack ramp time 0 -> full speed (0 = instant, jolts)
+constexpr uint16_t ESCAPE_RAMP_MS    = 30;   // edge escapes: short ramp so full-speed reversing doesn't brown out
+// The ESP32's brownout detector is set to its most sensitive level: a short
+// voltage dip from the motors resets the board, and during the reboot GPIO44
+// (right motor) is HIGH, so the wheel lurches and dips the battery again.
+// true = ride through short dips instead of resetting. A really flat battery
+// can still crash it (screen then shows CRASH / WATCHDOG).
+constexpr bool     DISABLE_BROWNOUT_RESET = true;
 
 // --- IR edge sensors (Maker Reflect) ----------------------------------
 // Pin level that means "on the border". Practice mat = white ring, black
@@ -43,6 +50,9 @@ constexpr uint16_t SONAR_INTERVAL_MS = 30;   // ping period (>= ~25 ms to avoid 
 constexpr uint8_t  SONAR_HITS_TO_SEE    = 3;  // readings in a row before a target counts
 constexpr uint8_t  SONAR_MISSES_TO_LOSE = 4;  // misses in a row before it is dropped
 constexpr uint16_t SONAR_HYST_CM        = 10; // a tracked target is kept this far past the range
+// Readings closer than this are our own wedge (front of wedge is 7 cm from
+// the sonars), so they count as "nothing". sensor_test still prints them raw.
+constexpr uint16_t SONAR_MIN_CM         = 7;
 
 // --- Match ------------------------------------------------------------
 // Power on -> START_DELAY_MS -> fight until power off (no button).
@@ -63,10 +73,16 @@ constexpr uint8_t  ATTACK_SPEED     = 255;   // target closer than CLOSE_CM
 constexpr uint8_t  APPROACH_SPEED   = 255;   // target further away (full-power charge)
 constexpr uint8_t  TRACK_TURN_SPEED = 220;   // outer wheel when turning toward a side target
 constexpr int16_t  TRACK_INNER_SPEED = 0;    // inner wheel: 0 = swing forward, negative = spin in place
-constexpr float    STEER_RATIO      = 0.6f;  // inner/outer wheel ratio when target is mid + one side
+constexpr float    STEER_RATIO      = 0.75f; // inner/outer wheel ratio when target is mid + one side (higher = gentler)
 constexpr uint16_t CLOSE_CM         = 25;    // closer than this -> ATTACK_SPEED
-constexpr uint16_t CONTACT_CM       = 10;    // closer than this = touching the opponent
-constexpr uint32_t CONTACT_HOLD_MS  = 350;   // keep pushing this long after the sonar drops out at contact
+constexpr uint16_t CONTACT_CM       = 13;    // closer than this = touching (wedge front is 7 cm from the sonar)
+constexpr uint32_t CONTACT_HOLD_MS  = 500;   // keep pushing this long after the sonar drops out at contact
+// While touching, steer only gently so we push straight through instead of
+// wobbling off the opponent (1.0 = no steering).
+constexpr float    CONTACT_STEER_RATIO = 0.9f;
+// Middle sonar has the target: only steer toward a side sonar whose reading
+// is within this of the middle one (same object, not something else nearby).
+constexpr uint16_t SIDE_MATCH_CM    = 15;
 // In contact and our front reaches the border: the opponent is already
 // over it, so keep pushing this long before escaping (0 = escape at once).
 constexpr uint32_t EDGE_PUSH_THROUGH_MS = 150;
@@ -92,9 +108,9 @@ constexpr uint32_t SEARCH_ADVANCE_MS = 350;  // forward hop time
 // No new spin within this time, and none right after an edge escape.
 constexpr uint32_t SEARCH_RESPIN_MS  = 3000;
 // true = spin once, then drive a continuous curve instead of spin + hop.
-constexpr bool     SEARCH_ARC        = false;
+constexpr bool     SEARCH_ARC        = true;
 constexpr uint8_t  SEARCH_ARC_OUTER  = 200;  // outer wheel speed while curving
-constexpr uint8_t  SEARCH_ARC_INNER  = 40;   // inner wheel (bigger = wider curve)
+constexpr uint8_t  SEARCH_ARC_INNER  = 90;   // inner wheel (bigger = wider curve)
 
 // --- Edge escape ------------------------------------------------------
 constexpr uint8_t  ESCAPE_REVERSE_SPEED = 220;

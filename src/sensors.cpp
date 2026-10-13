@@ -59,6 +59,8 @@ int16_t median3(int16_t a, int16_t b, int16_t c) {
 
 void record(Echo &e, int16_t raw, uint16_t maxCm) {
   e.rawCm = raw;
+  // Echoes off our own wedge count as "nothing" (see SONAR_MIN_CM).
+  if (raw > 0 && raw < (int16_t)SONAR_MIN_CM) raw = -1;
   e.history[e.histIdx] = raw > 0 ? raw : 999;  // "nothing" sorts as far away
   e.histIdx = (e.histIdx + 1) % 3;
   int16_t med = median3(e.history[0], e.history[1], e.history[2]);
