@@ -3,14 +3,15 @@
 // ---------------------------------------------------------------------
 //  Priority every loop (loop is non-blocking, runs at kHz rates):
 //    1. EDGE   - an IR sensor sees the (black) border -> timed escape
-//    2. ATTACK - a sonar sees the opponent -> steer at it and push
-//    3. SEARCH - spin toward where it was last seen, then reposition
+//    2. ATTACK - middle sonar sees the opponent -> full-power charge
+//    3. SEARCH - spin toward where it was last seen, then hop forward
 //
 //  Start: power on -> (optional START_DELAY_MS countdown) -> fight until power off.
 // =====================================================================
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 #include <esp_system.h>
+#include <soc/rtc_cntl_reg.h>
 
 #include "config.h"
 #include "motors.h"
@@ -160,7 +161,7 @@ static void runEscape() {
     setState(State::Attack, sonarWhy());
     return;
   }
-  Motors::drive(s.left, s.right);
+  Motors::drive(s.left, s.right, ESCAPE_RAMP_MS);  // short ramp: sharp, but no brownout
 }
 
 // --------------------------------------------------------------------
@@ -204,14 +205,19 @@ static bool runAttack() {
   if (m) {
     lastMidMs = now;
     int16_t d = Sonar::distanceCm(Sonar::MID);
-    if (d > 0 && d <= (int16_t)CONTACT_CM) lastContactMs = now;
+    const bool touching = d > 0 && d <= (int16_t)CONTACT_CM;
+    if (touching) lastContactMs = now;
     int16_t speed = (d > 0 && d <= (int16_t)CLOSE_CM) ? ATTACK_SPEED : APPROACH_SPEED;
-    int16_t inner = speed * STEER_RATIO;
+    int16_t inner = speed * (touching ? CONTACT_STEER_RATIO : STEER_RATIO);
+    // A side reading much nearer/further than the middle one is a different
+    // object - steering at it makes us circle off the real target.
+    auto same = [&](Sonar::Side s) { return abs(Sonar::distanceCm(s) - d) <= (int)SIDE_MATCH_CM; };
+    const bool sl = l && same(Sonar::LEFT), sr = r && same(Sonar::RIGHT);
 
-    if (l && !r) {
+    if (sl && !sr) {
       lastSeenDir = -1;
       drive(inner, speed);
-    } else if (r && !l) {
+    } else if (sr && !sl) {
       lastSeenDir = +1;
       drive(speed, inner);
     } else {
@@ -336,7 +342,7 @@ static void runMatch() {
 //  Display (320x170). Only redraws what changed, so it can stay live
 //  during the match without slowing the control loop.
 //
-//   4.02V                          reset: power on
+//   4.02V          GROUP 5          reset: power on
 //               ATTACK                    <- state, large + centred
 //   [  L  --  ] [  M  42  ] [  R  --  ]   <- sonar zones, RED = target seen
 //   [ FL ] [ FR ] [ RL ] [ RR ]           <- edge sensors, RED = border
@@ -369,6 +375,12 @@ static void drawStatic() {
     default: break;
   }
   char buf[32];
+  // Group number, top centre (the brief requires it to be clearly shown).
+  snprintf(buf, sizeof buf, "GROUP %d", GROUP_NUMBER);
+  tft.setTextDatum(TC_DATUM);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.drawString(buf, 160, 2, 2);
+
   snprintf(buf, sizeof buf, "reset: %s", why);
   tft.setTextDatum(TR_DATUM);
   tft.setTextColor(esp_reset_reason() == ESP_RST_BROWNOUT ? TFT_RED : TFT_DARKGREY, TFT_BLACK);
@@ -489,9 +501,10 @@ static void updateDisplay() {
 // --------------------------------------------------------------------
 
 void setup() {
-  // Motors first so the bot can never twitch on boot.
+  // Motors off first thing.
   Motors::begin();
   Motors::coast();
+  if (DISABLE_BROWNOUT_RESET) WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);  // see config.h
 
   Serial.begin(115200);
   Serial.setTxTimeoutMs(0);  // never stall the control loop when USB is unplugged
@@ -507,7 +520,7 @@ void setup() {
     drawStatic();
   }
 
-  // Countdown starts now (state begins as Countdown); then fight forever.
+  // State starts as Countdown (0 ms by default), then fights until power off.
   stateSinceMs = millis();
   Serial.println("Sumobot: started");
 }
