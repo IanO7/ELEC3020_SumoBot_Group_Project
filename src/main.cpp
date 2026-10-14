@@ -303,20 +303,22 @@ static void runMatch() {
     pushingAtEdge = false;
   }
 
-  // 1. Edge handling:
-  // If we are currently escaping, run the escape to completion!
-  // Do NOT interrupt or re-plan mid-escape: that causes violent jitter.
+  // 1. Edge handling. The edge is NEVER ignored, even mid-escape or right
+  // after one: at full speed even a few hundred ms blind drives off the ring.
+  // No jitter from this, because the front sensors only build up evidence
+  // while driving forward and the rear ones only while reversing - so the
+  // reverse / turn of an escape can't re-trigger on the edge we just left.
   if (state == State::Escape) {
+    // Escape step heading into an edge (forward hop onto the border, or
+    // reversing onto it behind us): re-plan from the new edge.
+    const Step &cur = escapeSteps[escapeIndex];
+    const int dir = cur.left + cur.right;
+    if ((dir > 0 && line.front()) || (dir < 0 && line.rear())) planEscape(line);
     runEscape();
     return;
   }
 
-  // Cooldown after an escape finishes:
-  // For EDGE_ESCAPE_COOLDOWN_MS after escaping, do not re-trigger escape.
-  // This lets the robot drive safely into the ring interior without boundary spasms.
-  const bool escapeCooldown = (escapeEndMs != 0) && (now - escapeEndMs < EDGE_ESCAPE_COOLDOWN_MS);
-
-  if (line.any() && !escapeCooldown) {
+  if (line.any()) {
     planEscape(line);
     runEscape();
     return;

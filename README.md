@@ -7,7 +7,7 @@ Autonomous sumobot firmware for the **LILYGO T-Display-S3** (ESP32-S3), built wi
 Everything works on the practice mat (white ring, black border): starts straight away on power-on, edge escape at full speed, sumo-style search, and full-power attack that pushes objects out. All 4 IR sensors and all 3 sonars are enabled; `include/config.h` is at competition values (start delay 0 - see to-do).
 
 Still to do:
-- Tune `SEARCH_SPIN_MS` (about one full turn) and `SEARCH_TURN_SPEED` (lower if it spins past a target), and `EDGE_PUSH_THROUGH_MS` (0-250) for pushing objects out without following them.
+- Tune `SEARCH_SPIN_MS` (about one full turn) and `SEARCH_TURN_SPEED` (lower if it spins past a target), and `EDGE_PUSH_THROUGH_MS` (0-100) for pushing objects out without following them.
 - Confirm the competition allows starting immediately on power-on (no button, no countdown). The brief's rules may require a 5 s delay: set `START_DELAY_MS = 5000`.
 - Loose jumper contacts have caused faults more than once (motor signal, middle sonar). Solder or hot-glue connectors before the competition.
 
@@ -82,9 +82,10 @@ LiPo care: charge only on a balance charger, don't run below ~3.5V/cell (10.5V),
 
 Power on → match starts immediately and runs until the battery is disconnected (with `START_DELAY_MS` > 0 the screen counts down `START IN n` first). Every loop, in priority order:
 
-1. **Edge** - an IR sensor sees black for a set distance (`EDGE_CONFIRM_MS` = 20 ms at full speed, longer when slower). Only driving toward the border counts (spinning on the spot over a scuff doesn't), and white readings cancel black ones 3x as fast, so scratches / scuffs inside the ring and motor-noise flicker never count:
+1. **Edge** - an IR sensor sees black for a set distance (`EDGE_CONFIRM_MS` = 10 ms at full speed, longer when slower). Only driving toward the border counts (spinning on the spot over a scuff doesn't), and white readings cancel black ones 2x as fast, so scratches / scuffs inside the ring and motor-noise flicker never count:
    - front sensor → reverse, then turn away (both front → turn ~180°)
    - rear sensor → drive forward, angled away
+   - the edge is checked all the time, also during and right after an escape (a forward hop onto the border, or reversing onto it, starts a new escape)
    - while pushing an opponent (in contact), keep pushing for `EDGE_PUSH_THROUGH_MS` to shove it over the line, then escape - even if the sensors have already crossed the line.
 2. **Attack** - the middle sonar sees a target within 70 cm (3 readings in a row) → **full-power charge**; side sonars steer to keep it centred. A side sonar alone doesn't start an attack, it turns the search toward that side.
 3. **Search** - spin on the spot (about one full turn) toward where the opponent was last seen, then a short forward hop, repeat.
@@ -97,9 +98,9 @@ Power on → match starts immediately and runs until the battery is disconnected
 |---|---|
 | `TEST_EDGE_ONLY = true` | Drives forward and only does edge escapes (no search/attack) |
 | `TEST_ATTACK_ONLY = true` | No edge, no search: waits until a sonar sees something, then attacks. **Test on the floor** |
-| `EDGE_CONFIRM_MS` (20) | Edge filter distance, in ms of travel at full speed (scaled up automatically when slower). Raise (25-30) if marks / scratches still trigger escapes; lower (15) if it goes too far over the border |
-| `EDGE_CONFIRM_MAX_MS` (80) | Black for this long always counts as the border (stopped or being pushed) |
-| `EDGE_WHITE_WEIGHT` (3.0) | How fast white readings cancel black ones. Raise (4-5) if it still escapes in the middle of the ring |
+| `EDGE_CONFIRM_MS` (10) | Edge filter distance, in ms of travel at full speed (scaled up automatically when slower). Raise (15) if scuffs in the middle of the ring trigger escapes; lower (6-8) if it still drives out |
+| `EDGE_CONFIRM_MAX_MS` (40) | Black for this long always counts as the border (stopped or being pushed) |
+| `EDGE_WHITE_WEIGHT` (2.0) | How fast white readings cancel black ones. Raise (4-5) if it still escapes in the middle of the ring |
 | `USE_MID_SONAR` / `USE_SIDE_SONARS = false` | Ignore a faulty sonar |
 | `USE_REAR_EDGE_SENSORS` / `USE_REAR_RIGHT_SENSOR = false` | Ignore faulty rear IR sensors |
 | `MOTOR_SPEED_LIMIT = 160` | Slow everything down proportionally |

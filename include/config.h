@@ -40,21 +40,15 @@ constexpr bool USE_REAR_RIGHT_SENSOR = true;
 // back on white first and they are ignored - at any speed. White readings
 // cancel black ones (EDGE_WHITE_WEIGHT x faster), so motor noise that makes
 // a sensor flicker never adds up to a border.
-// Distance is measured as "ms at full speed": EDGE_CONFIRM_MS = 20 means
-// 20 ms at full speed, 40 ms at half speed, etc. Only driving TOWARD the
-// sensor's side counts (forward for front sensors), so spinning on the spot
-// over a scuff never triggers an escape. Speed is estimated from the motor
-// commands, allowing MOTOR_SPINUP_MS to get up to speed (so a sudden charge
-// from a standstill doesn't count as fast yet).
-// Raise CONFIRM if marks still trigger; lower it if the robot goes too far
-// over the border before reacting (check with TEST_EDGE_ONLY at full speed).
-constexpr uint32_t EDGE_CONFIRM_MS     = 20;
-constexpr uint32_t EDGE_CONFIRM_MAX_MS = 80;  // always counts after this much black (stopped / being pushed)
-constexpr float    EDGE_WHITE_WEIGHT   = 3.0f; // 1 ms of white cancels this many ms of black (higher = more noise-proof)
-constexpr uint32_t MOTOR_SPINUP_MS     = 150; // rough time for the wheels to reach a new speed
-// Cooldown after an edge escape finishes: prevents immediate re-triggering / jitter
-// and allows the robot to drive safely back into the ring interior.
-constexpr uint32_t EDGE_ESCAPE_COOLDOWN_MS = 300;
+// Distance is measured as "ms at full speed" (from the motor commands):
+// EDGE_CONFIRM_MS = 10 means 10 ms at full speed, 20 ms at half speed, etc.
+// Only driving TOWARD the sensor's side counts (forward for front sensors),
+// so spinning on the spot over a scuff never triggers an escape.
+// Lower CONFIRM if it still drives out; raise it if scuffs in the middle of
+// the ring trigger escapes (check with TEST_EDGE_ONLY at full speed).
+constexpr uint32_t EDGE_CONFIRM_MS     = 10;
+constexpr uint32_t EDGE_CONFIRM_MAX_MS = 40;  // always counts after this much black (stopped / being pushed)
+constexpr float    EDGE_WHITE_WEIGHT   = 2.0f; // 1 ms of white cancels this many ms of black (higher = more noise-proof, but a patchy border may not count)
 
 // --- Ultrasonic -------------------------------------------------------
 // Ring is ~1 m diameter: from the centre the opponent is always < ~60 cm.
@@ -84,13 +78,13 @@ constexpr uint32_t START_DELAY_MS   = 0;
 //   EDGE_TEST_SPEED and does the normal edge escape at the border.
 constexpr bool     TEST_ATTACK_ONLY = false;
 constexpr bool     TEST_EDGE_ONLY   = false;
-constexpr uint8_t  EDGE_TEST_SPEED  = 140;
+constexpr uint8_t  EDGE_TEST_SPEED  = 255;
 constexpr int8_t   START_SEARCH_DIR = +1;    // first search spin: +1 right, -1 left
 
 // --- Attack -----------------------------------------------------------
 constexpr uint8_t  ATTACK_SPEED     = 255;   // target close in front: full push
 constexpr uint8_t  APPROACH_SPEED   = 255;   // target ahead but far (full power: sumo-style charge as soon as it is seen)
-constexpr uint8_t  TRACK_TURN_SPEED = 220;   // outer wheel when swinging toward a side target
+constexpr uint8_t  TRACK_TURN_SPEED = 255;   // outer wheel when swinging toward a side target
 // Inner wheel when turning toward a side target. 120 keeps the robot driving
 // forward while swinging into the target. 0 stopped the inner wheel and caused
 // spinning in circles.
@@ -104,7 +98,7 @@ constexpr uint16_t CONTACT_CM       = 15;    // closer than this = in contact / 
 // 1800 ms gives enough time to push an opponent across the ring to the edge.
 constexpr uint32_t CONTACT_HOLD_MS  = 1800;
 // Pushing an opponent and our FRONT reaches the border: keep pushing to shove them out.
-constexpr uint32_t EDGE_PUSH_THROUGH_MS = 250;
+constexpr uint32_t EDGE_PUSH_THROUGH_MS = 100;
 // true = allows swinging toward side-sonar targets while maintaining forward motion.
 constexpr bool     SIDE_ONLY_ATTACK     = true;
 
@@ -124,7 +118,7 @@ constexpr uint32_t SIDE_IGNORE_MS       = 1500;
 // Sumo-style search: spin on the spot to sweep the sonar round the ring,
 // then a short forward hop to a new spot, repeat.
 constexpr uint8_t  SEARCH_TURN_SPEED = 140;  // 140 is reliable for ultrasonic echo acquisition
-constexpr uint8_t  SEARCH_FWD_SPEED  = 200;  // forward hop between spins
+constexpr uint8_t  SEARCH_FWD_SPEED  = 255;  // forward hop between spins
 constexpr uint32_t SEARCH_SPIN_MS    = 1000; // tuned for full turn
 // Don't spin again if we already did within this time, and never spin right
 // after an edge escape (the escape already turned us). Stops repeated spins.
@@ -138,11 +132,11 @@ constexpr uint8_t  SEARCH_ARC_INNER  = 40;   // inner wheel (bigger = wider curv
 
 // --- Edge escape ------------------------------------------------------
 constexpr uint8_t  ESCAPE_REVERSE_SPEED = 255;  // full power: stop and back off the border fast
-constexpr uint8_t  ESCAPE_TURN_SPEED    = 210;
-constexpr uint8_t  ESCAPE_FORWARD_SPEED = 200;
+constexpr uint8_t  ESCAPE_TURN_SPEED    = 255;
+constexpr uint8_t  ESCAPE_FORWARD_SPEED = 255;
 constexpr uint16_t ESCAPE_REVERSE_MS    = 280;
-constexpr uint16_t ESCAPE_TURN_MS       = 200;  // ~90-120 deg away from edge
-constexpr uint16_t ESCAPE_TURN_180_MS   = 350;  // both front sensors on edge
+constexpr uint16_t ESCAPE_TURN_MS       = 165;  // ~90-120 deg away from edge
+constexpr uint16_t ESCAPE_TURN_180_MS   = 290;  // both front sensors on edge
 constexpr uint16_t ESCAPE_FORWARD_MS    = 150;  // forward hop into ring away from border
 
 // --- Display ----------------------------------------------------------

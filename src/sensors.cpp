@@ -185,8 +185,6 @@ struct EdgeFilter {
 constexpr float MAX_SAMPLE_MS = 2.0f;
 
 static EdgeFilter debouncers[4];
-// Estimated robot speed forward / backward, 0..1 of full speed.
-static float fwdEst = 0, backEst = 0;
 static uint32_t lastReadMs = 0;
 
 void begin() {
@@ -206,15 +204,13 @@ LineState read() {
   float elapsed = lastReadMs ? (float)(now - lastReadMs) : 0;
   lastReadMs = now;
 
-  // Commanded forward speed (average of the wheels: spinning on the spot = 0),
-  // then a simple lag so the estimate takes ~MOTOR_SPINUP_MS to follow a
-  // sudden change. Front sensors only build edge evidence while driving
-  // FORWARD (toward what they see), rear sensors only while reversing:
-  // turning on the spot over a scuff can't carry us out of the ring.
+  // Commanded forward speed (average of the wheels: spinning on the spot = 0).
+  // Front sensors only build edge evidence while driving FORWARD (toward what
+  // they see), rear sensors only while reversing: turning on the spot over a
+  // scuff can't carry us out of the ring. No spin-up lag: counting the robot
+  // as fast straight away makes the edge reaction quicker, never slower.
   float fwd = (Motors::lastLeft() + Motors::lastRight()) / (2 * 255.0f);
-  float k = min(1.0f, elapsed / MOTOR_SPINUP_MS);
-  fwdEst += (max(fwd, 0.0f) - fwdEst) * k;
-  backEst += (max(-fwd, 0.0f) - backEst) * k;
+  const float fwdEst = max(fwd, 0.0f), backEst = max(-fwd, 0.0f);
   float dt = min(elapsed, MAX_SAMPLE_MS);  // one reading = at most 2 ms of evidence
 
   LineState s;
