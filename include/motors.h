@@ -1,13 +1,11 @@
 #pragma once
 #include <Arduino.h>
 
-#include "config.h"
-
 class Motor {
  public:
   Motor(uint8_t in1, uint8_t in2, uint8_t ch1, uint8_t ch2, bool inverted);
   void begin();
-  void set(int speed, uint16_t rampMs = MOTOR_RAMP_MS);  // -255 (full reverse) .. 255 (full forward)
+  void set(int speed);  // -255 (full reverse) .. 255 (full forward)
   void brake();         // both inputs high: short brake
   void coast();         // both inputs low: free-wheel
 
@@ -21,7 +19,7 @@ class Motor {
 
 namespace Motors {
 void begin();
-void drive(int left, int right, uint16_t rampMs = MOTOR_RAMP_MS);  // each -255..255; rampMs = 0 -> instant
+void drive(int left, int right);  // each -255..255
 int lastLeft();                   // last commanded speeds (0 after brake/coast)
 int lastRight();
 void brake();

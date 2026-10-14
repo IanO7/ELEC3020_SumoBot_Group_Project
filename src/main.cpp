@@ -3,15 +3,14 @@
 // ---------------------------------------------------------------------
 //  Priority every loop (loop is non-blocking, runs at kHz rates):
 //    1. EDGE   - an IR sensor sees the (black) border -> timed escape
-//    2. ATTACK - middle sonar sees the opponent -> full-power charge
-//    3. SEARCH - spin toward where it was last seen, then hop forward
+//    2. ATTACK - a sonar sees the opponent -> steer at it and push
+//    3. SEARCH - spin toward where it was last seen, then reposition
 //
 //  Start: power on -> (optional START_DELAY_MS countdown) -> fight until power off.
 // =====================================================================
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 #include <esp_system.h>
-#include <soc/rtc_cntl_reg.h>
 
 #include "config.h"
 #include "motors.h"
@@ -79,17 +78,17 @@ struct Step {
   bool interruptible;  // may be cut short to attack a target straight ahead
 };
 
-static Step escapeSteps[3];
+static Step escapeSteps[4];
 static uint8_t escapeCount = 0;
 static uint8_t escapeIndex = 0;
 static uint32_t escapeStepSinceMs = 0;
 
 static void addStep(int16_t l, int16_t r, uint16_t ms, bool interruptible = false) {
-  if (escapeCount < 3) escapeSteps[escapeCount++] = {l, r, ms, interruptible};
+  if (escapeCount < 4) escapeSteps[escapeCount++] = {l, r, ms, interruptible};
 }
 
 // Spin in place: dir +1 = clockwise (right), -1 = anticlockwise (left)
-static void addSpin(int8_t dir, uint16_t ms, bool interruptible) {
+static void addSpin(int8_t dir, uint16_t ms, bool interruptible = false) {
   addStep(dir * ESCAPE_TURN_SPEED, -dir * ESCAPE_TURN_SPEED, ms, interruptible);
 }
 
@@ -97,9 +96,10 @@ static void planEscape(const LineState &line) {
   escapeCount = 0;
   escapeIndex = 0;
   escapeStepSinceMs = millis();
-  // Forget attack/contact memory so we don't resume driving into the edge.
+  // Clear attack memory and line integrator counts
   lastTargetMs = 0;
   lastContactMs = 0;
+  Line::reset();
 
   const bool leftSide = line.frontLeft || line.rearLeft;
   const bool rightSide = line.frontRight || line.rearRight;
@@ -108,35 +108,30 @@ static void planEscape(const LineState &line) {
     // Straddling the border sideways: turn away from it, then drive in.
     int8_t dir = (leftSide && !rightSide) ? +1 : (rightSide && !leftSide) ? -1 : lastSeenDir;
     addSpin(dir, ESCAPE_TURN_MS, false);
-    addStep(ESCAPE_FORWARD_SPEED, ESCAPE_FORWARD_SPEED, ESCAPE_FORWARD_MS, true);
+    addStep(ESCAPE_FORWARD_SPEED, ESCAPE_FORWARD_SPEED, ESCAPE_FORWARD_MS, false);
   } else if (line.front()) {
-    addStep(-ESCAPE_REVERSE_SPEED, -ESCAPE_REVERSE_SPEED, ESCAPE_REVERSE_MS);
+    // Reverse away from border, turn away, then hop forward into the ring.
+    // Escapes are non-interruptible to prevent suicidal edge jitter.
+    addStep(-ESCAPE_REVERSE_SPEED, -ESCAPE_REVERSE_SPEED, ESCAPE_REVERSE_MS, false);
     if (line.frontLeft && line.frontRight) {
-      addSpin(lastSeenDir, ESCAPE_TURN_180_MS, true);
+      addSpin(lastSeenDir, ESCAPE_TURN_180_MS, false);
     } else {
-      addSpin(line.frontLeft ? +1 : -1, ESCAPE_TURN_MS, true);  // turn away from the edge
+      addSpin(line.frontLeft ? +1 : -1, ESCAPE_TURN_MS, false);  // turn away from the edge
     }
+    addStep(ESCAPE_FORWARD_SPEED, ESCAPE_FORWARD_SPEED, ESCAPE_FORWARD_MS, false);
   } else {
     // Rear on the border (we're being pushed): drive forward, angled away.
     int16_t fast = ESCAPE_FORWARD_SPEED;
     int16_t slow = ESCAPE_FORWARD_SPEED * 3 / 4;
-    if (line.rearLeft && !line.rearRight) addStep(fast, slow, ESCAPE_FORWARD_MS, true);
-    else if (line.rearRight && !line.rearLeft) addStep(slow, fast, ESCAPE_FORWARD_MS, true);
-    else addStep(fast, fast, ESCAPE_FORWARD_MS, true);
+    if (line.rearLeft && !line.rearRight) addStep(fast, slow, ESCAPE_FORWARD_MS, false);
+    else if (line.rearRight && !line.rearLeft) addStep(slow, fast, ESCAPE_FORWARD_MS, false);
+    else addStep(fast, fast, ESCAPE_FORWARD_MS, false);
   }
 
   char why[16];
   snprintf(why, sizeof why, "%s%s%s%s", line.frontLeft ? "FL " : "", line.frontRight ? "FR " : "",
            line.rearLeft ? "RL " : "", line.rearRight ? "RR" : "");
   setState(State::Escape, why);
-}
-
-// True if the current step is driving us further onto the border we see.
-static bool escapeConflicts(const LineState &line) {
-  const Step &s = escapeSteps[escapeIndex];
-  bool forward = s.left > 0 && s.right > 0;
-  bool reverse = s.left < 0 && s.right < 0;
-  return (forward && line.front()) || (reverse && line.rear());
 }
 
 static void runEscape() {
@@ -147,21 +142,13 @@ static void runEscape() {
   }
   if (escapeIndex >= escapeCount) {
     escapeEndMs = now;
+    Line::reset();  // clear any leftover line counts after escaping
     setState(State::Search, "escape done");
     return;
   }
 
-  // Only cut the escape short for an opponent close in front - not for
-  // something far away (likely outside the ring).
   const Step &s = escapeSteps[escapeIndex];
-  int16_t d = Sonar::distanceCm(Sonar::MID);
-  if (s.interruptible && !TEST_EDGE_ONLY && USE_MID_SONAR && Sonar::sees(Sonar::MID) && d > 0 &&
-      d <= (int16_t)CLOSE_CM) {
-    escapeEndMs = now;
-    setState(State::Attack, sonarWhy());
-    return;
-  }
-  Motors::drive(s.left, s.right, ESCAPE_RAMP_MS);  // short ramp: sharp, but no brownout
+  Motors::drive(s.left, s.right);
 }
 
 // --------------------------------------------------------------------
@@ -178,23 +165,18 @@ static bool runAttack() {
   auto seen = [&](Sonar::Side s) {
     if (!Sonar::sees(s)) return false;
     if (s == Sonar::MID && !USE_MID_SONAR) return false;
-    if (s != Sonar::MID && sidesMuted) return false;
+    if (s != Sonar::MID && (!USE_SIDE_SONARS || sidesMuted)) return false;
     int16_t d = Sonar::distanceCm(s);
-    if (s != Sonar::MID && (!USE_SIDE_SONARS || d > (int16_t)SIDE_MAX_CM)) return false;
+    if (s != Sonar::MID && d > (int16_t)SIDE_MAX_CM) return false;
     return !cooldown || (d > 0 && d <= (int16_t)CLOSE_CM);
   };
-  // Middle sonar had the target a moment ago -> a side-only reading is the
-  // same target drifting off-centre: curve after it, don't pivot hard.
+
   static uint32_t lastMidMs = 0;
   const bool midRecent = lastMidMs && now - lastMidMs < TARGET_LOST_HOLD_MS;
   bool l = seen(Sonar::LEFT);
   const bool m = seen(Sonar::MID);
   bool r = seen(Sonar::RIGHT);
-  if (USE_MID_SONAR && !SIDE_ONLY_ATTACK && !m && !midRecent && (l || r)) {
-    // Side-only reading: don't attack it, just curve the search toward it.
-    lastSeenDir = l ? -1 : +1;
-    l = r = false;
-  }
+
   auto drive = [&](int16_t left, int16_t right) {
     Motors::drive(left, right);
     lastAttackL = left;
@@ -202,58 +184,69 @@ static bool runAttack() {
     lastTargetMs = now;
   };
 
-  if (m) {
+  // 1. In contact / pushing: Sonars often drop out (< 3 cm) when touching the opponent.
+  // ALWAYS push straight forward at full power to ram them out of the ring!
+  if (lastContactMs && now - lastContactMs < CONTACT_HOLD_MS) {
+    drive(ATTACK_SPEED, ATTACK_SPEED);
+  }
+  // 2. Middle sonar has target locked ahead
+  else if (m) {
     lastMidMs = now;
     int16_t d = Sonar::distanceCm(Sonar::MID);
-    const bool touching = d > 0 && d <= (int16_t)CONTACT_CM;
-    if (touching) lastContactMs = now;
+    if (d > 0 && d <= (int16_t)CONTACT_CM) lastContactMs = now;
     int16_t speed = (d > 0 && d <= (int16_t)CLOSE_CM) ? ATTACK_SPEED : APPROACH_SPEED;
-    int16_t inner = speed * (touching ? CONTACT_STEER_RATIO : STEER_RATIO);
-    // A side reading much nearer/further than the middle one is a different
-    // object - steering at it makes us circle off the real target.
-    auto same = [&](Sonar::Side s) { return abs(Sonar::distanceCm(s) - d) <= (int)SIDE_MATCH_CM; };
-    const bool sl = l && same(Sonar::LEFT), sr = r && same(Sonar::RIGHT);
+    int16_t inner = speed * STEER_RATIO;
 
-    if (sl && !sr) {
+    // When close ahead, charge dead straight to avoid swerving / circling off!
+    if (d > 0 && d <= (int16_t)CLOSE_CM) {
+      drive(speed, speed);
+    } else if (l && !r) {
       lastSeenDir = -1;
       drive(inner, speed);
-    } else if (sr && !sl) {
+    } else if (r && !l) {
       lastSeenDir = +1;
       drive(speed, inner);
     } else {
       drive(speed, speed);
     }
-  } else if (l && r) {
-    drive(APPROACH_SPEED, APPROACH_SPEED);  // wide/close target dead ahead
-  } else if (USE_MID_SONAR && (l || r) && !midRecent && pivotSinceMs &&
-             now - pivotSinceMs > TRACK_TIMEOUT_MS) {
-    // (Only possible with a working middle sonar to confirm targets.)
-    // Spun toward a side reading for too long and the middle sonar never
-    // saw anything: false reading. Mute the sides and go back to search.
-    sideMutedUntilMs = now + SIDE_IGNORE_MS;
-    pivotSinceMs = 0;
-    return false;
-  } else if (l) {
+  }
+  // 3. Wide target ahead seen by both side sonars
+  else if (l && r) {
+    drive(APPROACH_SPEED, APPROACH_SPEED);
+  }
+  // 4. Target recently seen by mid, now drifting to one side: curve after it
+  else if (l && midRecent) {
     lastSeenDir = -1;
-    if (midRecent) drive(APPROACH_SPEED * STEER_RATIO, APPROACH_SPEED);
-    else drive(TRACK_INNER_SPEED, TRACK_TURN_SPEED);
-  } else if (r) {
+    drive(APPROACH_SPEED * STEER_RATIO, APPROACH_SPEED);
+  } else if (r && midRecent) {
     lastSeenDir = +1;
-    if (midRecent) drive(APPROACH_SPEED, APPROACH_SPEED * STEER_RATIO);
-    else drive(TRACK_TURN_SPEED, TRACK_INNER_SPEED);
-  } else if (lastContactMs && now - lastContactMs < CONTACT_HOLD_MS) {
-    // Sonar often reads nothing when pressed against the opponent: keep pushing.
-    Motors::drive(ATTACK_SPEED, ATTACK_SPEED);
-  } else if (lastTargetMs && now - lastTargetMs < TARGET_LOST_HOLD_MS &&
-             lastAttackL > 0 && lastAttackR > 0) {
-    // Target dropped out for a moment: keep driving at it. (Pivots aren't
-    // held - that just overshoots and swings the other way.)
+    drive(APPROACH_SPEED, APPROACH_SPEED * STEER_RATIO);
+  }
+  // 5. Target on one side only (advance while turning toward it)
+  else if (USE_SIDE_SONARS && (l || r)) {
+    if (pivotSinceMs && now - pivotSinceMs > TRACK_TIMEOUT_MS) {
+      // Turned too long without middle sonar locking on: false reading, mute side
+      sideMutedUntilMs = now + SIDE_IGNORE_MS;
+      pivotSinceMs = 0;
+      return false;
+    }
+    if (l) {
+      lastSeenDir = -1;
+      drive(TRACK_INNER_SPEED, TRACK_TURN_SPEED);
+    } else {
+      lastSeenDir = +1;
+      drive(TRACK_TURN_SPEED, TRACK_INNER_SPEED);
+    }
+  }
+  // 6. Target momentarily dropped out: maintain straight forward charge
+  else if (lastTargetMs && now - lastTargetMs < TARGET_LOST_HOLD_MS &&
+           lastAttackL > 0 && lastAttackR > 0) {
     Motors::drive(lastAttackL, lastAttackR);
   } else {
     return false;
   }
 
-  // Time how long we've been pivoting on a side-only reading.
+  // Time side-only pivoting
   const bool pivoting = !m && (l != r) && !midRecent;
   if (!pivoting) pivotSinceMs = 0;
   else if (!pivotSinceMs) pivotSinceMs = now;
@@ -293,8 +286,6 @@ static void runMatch() {
 
   // Push-through: in contact with the opponent and only our front is on the
   // border -> they're further out than us, so keep pushing for a moment.
-  // The line is narrow: if our sensors cross it onto the (light) area outside
-  // during the push, they read "safe" again - so remember it and escape anyway.
   static uint32_t pushEdgeSinceMs = 0;
   static bool pushingAtEdge = false;
   static LineState pushLine;
@@ -307,19 +298,28 @@ static void runMatch() {
     }
     if (now - pushEdgeSinceMs < EDGE_PUSH_THROUGH_MS) line = LineState{};
   } else if (pushingAtEdge) {
-    // Push-through ended (contact lost, or the line is no longer under us
-    // because we crossed it): escape from the edge we hit.
+    // Push-through ended: escape from the edge we hit.
     if (!line.any()) line = pushLine;
     pushingAtEdge = false;
   }
 
-  // 1. Edge wins (except during a push-through).
-  if (line.any() && (state != State::Escape || escapeConflicts(line))) {
-    planEscape(line);
-  }
+  // 1. Edge handling:
+  // If we are currently escaping, run the escape to completion!
+  // Do NOT interrupt or re-plan mid-escape: that causes violent jitter.
   if (state == State::Escape) {
     runEscape();
-    if (state == State::Escape) return;
+    return;
+  }
+
+  // Cooldown after an escape finishes:
+  // For EDGE_ESCAPE_COOLDOWN_MS after escaping, do not re-trigger escape.
+  // This lets the robot drive safely into the ring interior without boundary spasms.
+  const bool escapeCooldown = (escapeEndMs != 0) && (now - escapeEndMs < EDGE_ESCAPE_COOLDOWN_MS);
+
+  if (line.any() && !escapeCooldown) {
+    planEscape(line);
+    runEscape();
+    return;
   }
 
   if (TEST_EDGE_ONLY) {
@@ -342,7 +342,7 @@ static void runMatch() {
 //  Display (320x170). Only redraws what changed, so it can stay live
 //  during the match without slowing the control loop.
 //
-//   4.02V          GROUP 5          reset: power on
+//   4.02V                          reset: power on
 //               ATTACK                    <- state, large + centred
 //   [  L  --  ] [  M  42  ] [  R  --  ]   <- sonar zones, RED = target seen
 //   [ FL ] [ FR ] [ RL ] [ RR ]           <- edge sensors, RED = border
@@ -375,12 +375,6 @@ static void drawStatic() {
     default: break;
   }
   char buf[32];
-  // Group number, top centre (the brief requires it to be clearly shown).
-  snprintf(buf, sizeof buf, "GROUP %d", GROUP_NUMBER);
-  tft.setTextDatum(TC_DATUM);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString(buf, 160, 2, 2);
-
   snprintf(buf, sizeof buf, "reset: %s", why);
   tft.setTextDatum(TR_DATUM);
   tft.setTextColor(esp_reset_reason() == ESP_RST_BROWNOUT ? TFT_RED : TFT_DARKGREY, TFT_BLACK);
@@ -501,10 +495,9 @@ static void updateDisplay() {
 // --------------------------------------------------------------------
 
 void setup() {
-  // Motors off first thing.
+  // Motors first so the bot can never twitch on boot.
   Motors::begin();
   Motors::coast();
-  if (DISABLE_BROWNOUT_RESET) WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);  // see config.h
 
   Serial.begin(115200);
   Serial.setTxTimeoutMs(0);  // never stall the control loop when USB is unplugged
@@ -520,7 +513,7 @@ void setup() {
     drawStatic();
   }
 
-  // State starts as Countdown (0 ms by default), then fights until power off.
+  // Countdown starts now (state begins as Countdown); then fight forever.
   stateSinceMs = millis();
   Serial.println("Sumobot: started");
 }

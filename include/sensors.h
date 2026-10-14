@@ -29,5 +29,6 @@ struct LineState {
 
 namespace Line {
 void begin();
+void reset();
 LineState read();
 }  // namespace Line

@@ -31,23 +31,23 @@ void Motor::write(uint8_t pin, uint8_t ch, uint32_t duty) {
 #endif
 }
 
-void Motor::set(int speed, uint16_t rampMs) {
+void Motor::set(int speed) {
   speed = constrain(speed, -255, 255);
   if (speed != 0) {
     int mag = MOTOR_SPEED_MIN + (abs(speed) - 1) * (MOTOR_SPEED_LIMIT - MOTOR_SPEED_MIN) / 254;
     speed = speed > 0 ? mag : -mag;
   }
 
-  // Ramp when starting, speeding up or reversing - that's what jolts the
-  // robot and surges the battery current. Slowing down is instant.
+  // Ramp only when speeding up - that's what surges the battery current.
+  // Slowing down and direction changes are instant so escapes stay sharp.
   uint32_t now = millis();
   bool sameDir = (speed > 0 && current_ > 0) || (speed < 0 && current_ < 0);
-  if (rampMs == 0 || speed == 0 || (sameDir && abs(speed) <= fabsf(current_))) {
+  if (MOTOR_RAMP_MS == 0 || speed == 0 || (sameDir && abs(speed) <= fabsf(current_))) {
     current_ = speed;
   } else {
     // Starting or reversing: jump to the minimum (less doesn't turn the wheels).
     if (!sameDir) current_ = speed > 0 ? MOTOR_SPEED_MIN : -MOTOR_SPEED_MIN;
-    float maxStep = 255.0f * (now - lastMs_) / rampMs;
+    float maxStep = MOTOR_RAMP_MS > 0 ? (255.0f * (now - lastMs_) / MOTOR_RAMP_MS) : 255.0f;
     current_ += constrain(speed - current_, -maxStep, maxStep);
   }
   lastMs_ = now;
@@ -98,11 +98,11 @@ void begin() {
   rightMotor.begin();
 }
 
-void drive(int left, int right, uint16_t rampMs) {
+void drive(int left, int right) {
   cmdLeft = left;
   cmdRight = right;
-  leftMotor.set(left, rampMs);
-  rightMotor.set(right, rampMs);
+  leftMotor.set(left);
+  rightMotor.set(right);
 }
 
 void brake() {

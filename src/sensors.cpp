@@ -17,7 +17,7 @@ struct Echo {
   volatile bool done;
   // Owned by update()
   bool resolved;
-  int16_t history[3];  // last 3 raw readings (999 = none) for the median
+  int16_t history[3];  // last 3 raw readings (-1 = none) for the median
   uint8_t histIdx;
   int16_t rawCm;
   int16_t distCm;
@@ -59,8 +59,6 @@ int16_t median3(int16_t a, int16_t b, int16_t c) {
 
 void record(Echo &e, int16_t raw, uint16_t maxCm) {
   e.rawCm = raw;
-  // Echoes off our own wedge count as "nothing" (see SONAR_MIN_CM).
-  if (raw > 0 && raw < (int16_t)SONAR_MIN_CM) raw = -1;
   e.history[e.histIdx] = raw > 0 ? raw : 999;  // "nothing" sorts as far away
   e.histIdx = (e.histIdx + 1) % 3;
   int16_t med = median3(e.history[0], e.history[1], e.history[2]);
@@ -126,12 +124,13 @@ void update() {
     uint32_t elapsed = micros() - pingUs;
     for (Echo &e : echoes) {
       if (e.resolved) continue;
+      uint16_t maxLimit = (&e == &echoes[MID]) ? SONAR_MAX_CM : SIDE_MAX_CM;
       if (e.done) {
         int16_t cm = e.widthUs / 58;
-        record(e, (cm >= 1 && cm <= MEASURE_MAX_CM) ? cm : -1, SONAR_MAX_CM);
+        record(e, (cm >= 1 && cm <= MEASURE_MAX_CM) ? cm : -1, maxLimit);
         e.resolved = true;
       } else if (elapsed > ECHO_TIMEOUT_US) {
-        record(e, -1, SONAR_MAX_CM);  // nothing within range (sensor may still be high)
+        record(e, -1, maxLimit);  // nothing within range (sensor may still be high)
         e.resolved = true;
       } else {
         allResolved = false;
@@ -155,31 +154,66 @@ int16_t rawCm(Side s) { return echoes[s].rawCm; }
 
 namespace Line {
 
+// Leaky integrator filter for noisy IR edge sensors.
+// Samples every 1 ms. Increments on active level, decrements on non-active.
+// Requires EDGE_CONFIRM_COUNT to activate and drops below EDGE_RELEASE_COUNT to clear.
+// Rejects isolated motor EMI spikes, brush noise, and border threshold chatter.
+struct IntegratorDebounce {
+  int16_t confidence = 0;
+  uint32_t lastSampleMs = 0;
+  bool active = false;
+
+  static constexpr int16_t CONFIDENCE_MAX = 20;
+
+  void reset() {
+    confidence = 0;
+    active = false;
+    lastSampleMs = 0;
+  }
+
+  bool update(uint8_t pin, uint32_t now) {
+    if (now != lastSampleMs) {
+      lastSampleMs = now;
+      int level = digitalRead(pin);
+      if (level == LINE_ACTIVE_LEVEL) {
+        if (confidence < CONFIDENCE_MAX) confidence += 2;
+      } else {
+        if (confidence > 0) confidence -= 1;
+      }
+
+      if (!active && confidence >= EDGE_CONFIRM_COUNT) {
+        active = true;
+      } else if (active && confidence <= EDGE_RELEASE_COUNT) {
+        active = false;
+      }
+    }
+    return active;
+  }
+};
+
+static IntegratorDebounce debouncers[4];
+
 void begin() {
   pinMode(PIN_IR_FRONT_LEFT, INPUT_PULLUP);
   pinMode(PIN_IR_FRONT_RIGHT, INPUT_PULLUP);
   pinMode(PIN_IR_REAR_LEFT, INPUT_PULLUP);
   pinMode(PIN_IR_REAR_RIGHT, INPUT_PULLUP);
+  for (auto &d : debouncers) d.reset();
 }
 
-// True only once the pin has read "border" continuously for EDGE_CONFIRM_MS.
-static bool confirmed(uint8_t pin, uint32_t &sinceMs, uint32_t now) {
-  if (digitalRead(pin) != LINE_ACTIVE_LEVEL) {
-    sinceMs = 0;
-    return false;
-  }
-  if (sinceMs == 0) sinceMs = now ? now : 1;
-  return now - sinceMs >= EDGE_CONFIRM_MS;
+void reset() {
+  for (auto &d : debouncers) d.reset();
 }
 
 LineState read() {
-  static uint32_t since[4] = {0, 0, 0, 0};
   uint32_t now = millis();
   LineState s;
-  s.frontLeft = confirmed(PIN_IR_FRONT_LEFT, since[0], now);
-  s.frontRight = confirmed(PIN_IR_FRONT_RIGHT, since[1], now);
-  s.rearLeft = confirmed(PIN_IR_REAR_LEFT, since[2], now);
-  s.rearRight = confirmed(PIN_IR_REAR_RIGHT, since[3], now);
+  s.frontLeft  = debouncers[0].update(PIN_IR_FRONT_LEFT, now);
+  s.frontRight = debouncers[1].update(PIN_IR_FRONT_RIGHT, now);
+  s.rearLeft   = USE_REAR_EDGE_SENSORS ? debouncers[2].update(PIN_IR_REAR_LEFT, now) : false;
+  s.rearRight  = (USE_REAR_EDGE_SENSORS && USE_REAR_RIGHT_SENSOR)
+                     ? debouncers[3].update(PIN_IR_REAR_RIGHT, now)
+                     : false;
   return s;
 }
 
