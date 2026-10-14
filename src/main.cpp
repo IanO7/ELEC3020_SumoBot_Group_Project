@@ -342,7 +342,7 @@ static void runMatch() {
 //  Display (320x170). Only redraws what changed, so it can stay live
 //  during the match without slowing the control loop.
 //
-//   4.02V                          reset: power on
+//   4.02V          GROUP 5          reset: power on
 //               ATTACK                    <- state, large + centred
 //   [  L  --  ] [  M  42  ] [  R  --  ]   <- sonar zones, RED = target seen
 //   [ FL ] [ FR ] [ RL ] [ RR ]           <- edge sensors, RED = border
@@ -375,6 +375,12 @@ static void drawStatic() {
     default: break;
   }
   char buf[32];
+  // Group number, top centre (the brief requires it to be clearly shown).
+  snprintf(buf, sizeof buf, "GROUP %d", GROUP_NUMBER);
+  tft.setTextDatum(TC_DATUM);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.drawString(buf, 160, 2, 2);
+
   snprintf(buf, sizeof buf, "reset: %s", why);
   tft.setTextDatum(TR_DATUM);
   tft.setTextColor(esp_reset_reason() == ESP_RST_BROWNOUT ? TFT_RED : TFT_DARKGREY, TFT_BLACK);

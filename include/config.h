@@ -134,6 +134,7 @@ constexpr uint16_t ESCAPE_TURN_180_MS   = 350;  // both front sensors on edge
 constexpr uint16_t ESCAPE_FORWARD_MS    = 150;  // forward hop into ring away from border
 
 // --- Display ----------------------------------------------------------
+constexpr uint8_t  GROUP_NUMBER       = 5;    // shown top-centre (required by the brief)
 constexpr bool     ENABLE_DISPLAY     = true;
 constexpr uint32_t DISPLAY_REFRESH_MS = 150;  // live sensor view refresh period
 // Keep the sonar/edge boxes updating during the match (shows where the
