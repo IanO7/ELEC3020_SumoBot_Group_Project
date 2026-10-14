@@ -34,18 +34,22 @@ constexpr uint8_t LINE_ACTIVE_LEVEL = HIGH;
 constexpr bool USE_REAR_EDGE_SENSORS = false;
 // false = ignore just the rear-right sensor (e.g. if it misreads).
 constexpr bool USE_REAR_RIGHT_SENSOR = false;
-// Edge filter: the border must read black CONTINUOUSLY for a set DISTANCE
-// (not time) to count. Scratches / marks inside the ring are narrow, so the
-// sensor is back on white first and they are ignored - at any speed.
+// Edge filter: the border must read black for a set DISTANCE (not time)
+// to count. Scratches / marks inside the ring are narrow, so the sensor is
+// back on white first and they are ignored - at any speed. White readings
+// cancel black ones (EDGE_WHITE_WEIGHT x faster), so motor noise that makes
+// a sensor flicker never adds up to a border.
 // Distance is measured as "ms at full speed": EDGE_CONFIRM_MS = 20 means
-// 20 ms at full speed, 40 ms at half speed, etc. Robot speed is estimated
-// from the motor commands, allowing MOTOR_SPINUP_MS to get up to speed (so a
-// sudden charge from a slow search doesn't count as fast yet).
+// 20 ms at full speed, 40 ms at half speed, etc. Only driving TOWARD the
+// sensor's side counts (forward for front sensors), so spinning on the spot
+// over a scuff never triggers an escape. Speed is estimated from the motor
+// commands, allowing MOTOR_SPINUP_MS to get up to speed (so a sudden charge
+// from a standstill doesn't count as fast yet).
 // Raise CONFIRM if marks still trigger; lower it if the robot goes too far
 // over the border before reacting (check with TEST_EDGE_ONLY at full speed).
 constexpr uint32_t EDGE_CONFIRM_MS     = 20;
-constexpr uint32_t EDGE_CONFIRM_MAX_MS = 80;  // always counts after this long (stopped / being pushed)
-constexpr uint32_t EDGE_GAP_MS         = 2;   // white blips this short don't break the run (border chatter)
+constexpr uint32_t EDGE_CONFIRM_MAX_MS = 80;  // always counts after this much black (stopped / being pushed)
+constexpr float    EDGE_WHITE_WEIGHT   = 3.0f; // 1 ms of white cancels this many ms of black (higher = more noise-proof)
 constexpr uint32_t MOTOR_SPINUP_MS     = 150; // rough time for the wheels to reach a new speed
 // Cooldown after an edge escape finishes: prevents immediate re-triggering / jitter
 // and allows the robot to drive safely back into the ring interior.
@@ -132,10 +136,10 @@ constexpr uint8_t  SEARCH_ARC_OUTER  = 200;  // outer wheel speed while curving
 constexpr uint8_t  SEARCH_ARC_INNER  = 40;   // inner wheel (bigger = wider curve)
 
 // --- Edge escape ------------------------------------------------------
-constexpr uint8_t  ESCAPE_REVERSE_SPEED = 220;
+constexpr uint8_t  ESCAPE_REVERSE_SPEED = 255;  // full power: stop and back off the border fast
 constexpr uint8_t  ESCAPE_TURN_SPEED    = 210;
 constexpr uint8_t  ESCAPE_FORWARD_SPEED = 200;
-constexpr uint16_t ESCAPE_REVERSE_MS    = 220;
+constexpr uint16_t ESCAPE_REVERSE_MS    = 280;
 constexpr uint16_t ESCAPE_TURN_MS       = 200;  // ~90-120 deg away from edge
 constexpr uint16_t ESCAPE_TURN_180_MS   = 350;  // both front sensors on edge
 constexpr uint16_t ESCAPE_FORWARD_MS    = 150;  // forward hop into ring away from border

@@ -4,7 +4,7 @@ Autonomous sumobot firmware for the **LILYGO T-Display-S3** (ESP32-S3), built wi
 
 ## Status (10 Oct 2026)
 
-Everything works on the practice mat (white ring, black border): starts straight away on power-on, edge escape at full speed, sumo-style search, and full-power attack that pushes objects out. All 4 IR sensors and all 3 sonars are enabled; `include/config.h` is at competition values (start delay 0 - see to-do).
+Everything works on the practice mat (white ring, black border): starts straight away on power-on, edge escape at full speed, sumo-style search, and full-power attack that pushes objects out. Front IR sensors and all 3 sonars are enabled (rear IR sensors off: `USE_REAR_EDGE_SENSORS = false`); `include/config.h` is at competition values (start delay 0 - see to-do).
 
 Still to do:
 - Tune `SEARCH_SPIN_MS` (about one full turn) and `SEARCH_TURN_SPEED` (lower if it spins past a target), and `EDGE_PUSH_THROUGH_MS` (0-250) for pushing objects out without following them.
@@ -27,8 +27,9 @@ Still to do:
 | `include/config.h` | All tuning values: speeds, timings, sonar ranges, motor directions, test modes. |
 | `src/main.cpp` | Sumobot logic (state machine) and display. |
 | `src/motors.cpp` | Motor driver (2 PWM inputs per motor, speed limit/ramp). |
-| `src/sensors.cpp` | Ultrasonic (interrupt-timed, median-filtered) and IR edge sensors (debounced). |
+| `src/sensors.cpp` | Ultrasonic (interrupt-timed, median-filtered) and IR edge sensors (distance filter: ignores scratches / marks inside the ring). |
 | `src/tests/sensor_test.cpp` | Prints all sensor readings to the serial monitor. |
+| `src/tests/ir_calibrate.cpp` | Motors off; all 4 IR sensors + sonar live on screen, for setting sensor height. |
 | `src/tests/motor_test.cpp` | Runs each motor in each direction. |
 | `src/tests/single_motor_test.cpp` | One motor at rising speeds, step and GPIO shown on screen. |
 | `Manual.pdf` | Group project manual. |
@@ -41,6 +42,7 @@ Choose the environment in the PlatformIO sidebar, then **Upload**, or from a ter
 |---|---|---|
 | `sumo` (default) | `pio run -e sumo -t upload` | The competition firmware |
 | `sensor_test` | `pio run -e sensor_test -t upload`, then `pio device monitor` | Sonar distances and IR states every 0.5 s (USB only) |
+| `ir_calibrate` | `pio run -e ir_calibrate -t upload` | **Motors off.** All 4 IR sensors on screen, raw (green = white, red = black, yellow = flickering = at the edge of its range - lower the sensor / turn its knob), plus sonar distances. Works on battery; rear sensors shown even when disabled in `config.h` |
 | `motor_test` | `pio run -e motor_test -t upload` | Each wheel forward/backward, both forward, spin right. Press KEY to start (wheels off the ground) |
 | `left_motor_test` / `right_motor_test` | `pio run -e left_motor_test -t upload` | One motor forward then backward at rising speeds; shows the step and the GPIO being driven. Press KEY to start |
 
@@ -80,7 +82,7 @@ LiPo care: charge only on a balance charger, don't run below ~3.5V/cell (10.5V),
 
 Power on → match starts immediately and runs until the battery is disconnected (with `START_DELAY_MS` > 0 the screen counts down `START IN n` first). Every loop, in priority order:
 
-1. **Edge** - an IR sensor sees continuous black for a set distance (`EDGE_CONFIRM_MS` = 20 ms at full speed, longer when slower; scratches and marks inside the ring are too narrow to count):
+1. **Edge** - an IR sensor sees black for a set distance (`EDGE_CONFIRM_MS` = 20 ms at full speed, longer when slower). Only driving toward the border counts (spinning on the spot over a scuff doesn't), and white readings cancel black ones 3x as fast, so scratches / scuffs inside the ring and motor-noise flicker never count:
    - front sensor → reverse, then turn away (both front → turn ~180°)
    - rear sensor → drive forward, angled away
    - while pushing an opponent (in contact), keep pushing for `EDGE_PUSH_THROUGH_MS` to shove it over the line, then escape - even if the sensors have already crossed the line.
@@ -95,6 +97,9 @@ Power on → match starts immediately and runs until the battery is disconnected
 |---|---|
 | `TEST_EDGE_ONLY = true` | Drives forward and only does edge escapes (no search/attack) |
 | `TEST_ATTACK_ONLY = true` | No edge, no search: waits until a sonar sees something, then attacks. **Test on the floor** |
+| `EDGE_CONFIRM_MS` (20) | Edge filter distance, in ms of travel at full speed (scaled up automatically when slower). Raise (25-30) if marks / scratches still trigger escapes; lower (15) if it goes too far over the border |
+| `EDGE_CONFIRM_MAX_MS` (80) | Black for this long always counts as the border (stopped or being pushed) |
+| `EDGE_WHITE_WEIGHT` (3.0) | How fast white readings cancel black ones. Raise (4-5) if it still escapes in the middle of the ring |
 | `USE_MID_SONAR` / `USE_SIDE_SONARS = false` | Ignore a faulty sonar |
 | `USE_REAR_EDGE_SENSORS` / `USE_REAR_RIGHT_SENSOR = false` | Ignore faulty rear IR sensors |
 | `MOTOR_SPEED_LIMIT = 160` | Slow everything down proportionally |

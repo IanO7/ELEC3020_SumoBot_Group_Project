@@ -155,41 +155,38 @@ int16_t rawCm(Side s) { return echoes[s].rawCm; }
 
 namespace Line {
 
-// Edge filter: the border counts only once the sensor has travelled
-// EDGE_CONFIRM_MS (in "ms at full speed") over continuous black, or has
-// read black for EDGE_CONFIRM_MAX_MS. Any white longer than EDGE_GAP_MS ends
-// the run, so narrow scratches / marks are ignored whether the robot is
-// charging, spinning slowly or just starting to move.
+// Edge filter: each reading adds or removes "border evidence".
+//   black -> + distance moved toward it (in ms at full speed) and + time
+//   white -> - EDGE_WHITE_WEIGHT x time from both
+// The border counts once the distance reaches EDGE_CONFIRM_MS, or the time
+// reaches EDGE_CONFIRM_MAX_MS (stopped / being pushed). The real border is
+// solid black and builds up fast; a narrow mark is crossed before it gets
+// there; motor noise flickering black/white is mostly white so it never
+// builds up. One reading never counts for more than MAX_SAMPLE_MS, so a
+// stalled loop (display redraw) can't turn one black blip into a long run.
 struct EdgeFilter {
-  uint32_t blackSinceMs = 0;  // start of the current black run (0 = none)
-  uint32_t lastBlackMs = 0;   // last time the sensor read black
-  float travelled = 0;        // distance over black, in ms at full speed
+  float dist = 0;  // evidence in ms of travel at full speed
+  float time = 0;  // evidence in plain ms
 
-  void reset() {
-    blackSinceMs = lastBlackMs = 0;
-    travelled = 0;
-  }
+  void reset() { dist = time = 0; }
 
-  // dtFull = distance moved since the last call, in ms at full speed
-  bool update(uint8_t pin, uint32_t now, float dtFull) {
+  bool update(uint8_t pin, float dt, float speed) {
     if (digitalRead(pin) == LINE_ACTIVE_LEVEL) {
-      if (!blackSinceMs) {
-        blackSinceMs = now ? now : 1;
-        travelled = 0;
-      } else {
-        travelled += dtFull;
-      }
-      lastBlackMs = now;
-    } else if (blackSinceMs && now - lastBlackMs > EDGE_GAP_MS) {
-      blackSinceMs = 0;  // back on white: it was a mark, not the border
+      dist = min(dist + dt * speed, 2.0f * EDGE_CONFIRM_MS);
+      time = min(time + dt, 2.0f * EDGE_CONFIRM_MAX_MS);
+    } else {
+      dist = max(0.0f, dist - EDGE_WHITE_WEIGHT * dt);
+      time = max(0.0f, time - EDGE_WHITE_WEIGHT * dt);
     }
-    return blackSinceMs &&
-           (travelled >= EDGE_CONFIRM_MS || now - blackSinceMs >= EDGE_CONFIRM_MAX_MS);
+    return dist >= EDGE_CONFIRM_MS || time >= EDGE_CONFIRM_MAX_MS;
   }
 };
 
+constexpr float MAX_SAMPLE_MS = 2.0f;
+
 static EdgeFilter debouncers[4];
-static float speedEst = 0;      // estimated robot speed, 0..1 of full speed
+// Estimated robot speed forward / backward, 0..1 of full speed.
+static float fwdEst = 0, backEst = 0;
 static uint32_t lastReadMs = 0;
 
 void begin() {
@@ -206,21 +203,26 @@ void reset() {
 
 LineState read() {
   uint32_t now = millis();
-  float dt = lastReadMs ? (float)(now - lastReadMs) : 0;
+  float elapsed = lastReadMs ? (float)(now - lastReadMs) : 0;
   lastReadMs = now;
 
-  // Commanded speed (average wheel speed, either direction), then a simple
-  // lag so the estimate takes ~MOTOR_SPINUP_MS to follow a sudden change.
-  float target = (abs(Motors::lastLeft()) + abs(Motors::lastRight())) / (2 * 255.0f);
-  speedEst += (target - speedEst) * min(1.0f, dt / MOTOR_SPINUP_MS);
-  float dtFull = dt * speedEst;
+  // Commanded forward speed (average of the wheels: spinning on the spot = 0),
+  // then a simple lag so the estimate takes ~MOTOR_SPINUP_MS to follow a
+  // sudden change. Front sensors only build edge evidence while driving
+  // FORWARD (toward what they see), rear sensors only while reversing:
+  // turning on the spot over a scuff can't carry us out of the ring.
+  float fwd = (Motors::lastLeft() + Motors::lastRight()) / (2 * 255.0f);
+  float k = min(1.0f, elapsed / MOTOR_SPINUP_MS);
+  fwdEst += (max(fwd, 0.0f) - fwdEst) * k;
+  backEst += (max(-fwd, 0.0f) - backEst) * k;
+  float dt = min(elapsed, MAX_SAMPLE_MS);  // one reading = at most 2 ms of evidence
 
   LineState s;
-  s.frontLeft  = debouncers[0].update(PIN_IR_FRONT_LEFT, now, dtFull);
-  s.frontRight = debouncers[1].update(PIN_IR_FRONT_RIGHT, now, dtFull);
-  s.rearLeft   = USE_REAR_EDGE_SENSORS ? debouncers[2].update(PIN_IR_REAR_LEFT, now, dtFull) : false;
+  s.frontLeft  = debouncers[0].update(PIN_IR_FRONT_LEFT, dt, fwdEst);
+  s.frontRight = debouncers[1].update(PIN_IR_FRONT_RIGHT, dt, fwdEst);
+  s.rearLeft   = USE_REAR_EDGE_SENSORS ? debouncers[2].update(PIN_IR_REAR_LEFT, dt, backEst) : false;
   s.rearRight  = (USE_REAR_EDGE_SENSORS && USE_REAR_RIGHT_SENSOR)
-                     ? debouncers[3].update(PIN_IR_REAR_RIGHT, now, dtFull)
+                     ? debouncers[3].update(PIN_IR_REAR_RIGHT, dt, backEst)
                      : false;
   return s;
 }
