@@ -80,7 +80,7 @@ LiPo care: charge only on a balance charger, don't run below ~3.5V/cell (10.5V),
 
 Power on → match starts immediately and runs until the battery is disconnected (with `START_DELAY_MS` > 0 the screen counts down `START IN n` first). Every loop, in priority order:
 
-1. **Edge** - an IR sensor sees the black border (confirmed for 10 ms):
+1. **Edge** - an IR sensor sees continuous black for a set distance (`EDGE_CONFIRM_MS` = 20 ms at full speed, longer when slower; scratches and marks inside the ring are too narrow to count):
    - front sensor → reverse, then turn away (both front → turn ~180°)
    - rear sensor → drive forward, angled away
    - while pushing an opponent (in contact), keep pushing for `EDGE_PUSH_THROUGH_MS` to shove it over the line, then escape - even if the sensors have already crossed the line.

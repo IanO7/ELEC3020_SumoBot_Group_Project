@@ -3,6 +3,7 @@
 #include <driver/gpio.h>
 
 #include "config.h"
+#include "motors.h"
 #include "pins.h"
 
 namespace Sonar {
@@ -154,44 +155,42 @@ int16_t rawCm(Side s) { return echoes[s].rawCm; }
 
 namespace Line {
 
-// Leaky integrator filter for noisy IR edge sensors.
-// Samples every 1 ms. Increments on active level, decrements on non-active.
-// Requires EDGE_CONFIRM_COUNT to activate and drops below EDGE_RELEASE_COUNT to clear.
-// Rejects isolated motor EMI spikes, brush noise, and border threshold chatter.
-struct IntegratorDebounce {
-  int16_t confidence = 0;
-  uint32_t lastSampleMs = 0;
-  bool active = false;
-
-  static constexpr int16_t CONFIDENCE_MAX = 20;
+// Edge filter: the border counts only once the sensor has travelled
+// EDGE_CONFIRM_MS (in "ms at full speed") over continuous black, or has
+// read black for EDGE_CONFIRM_MAX_MS. Any white longer than EDGE_GAP_MS ends
+// the run, so narrow scratches / marks are ignored whether the robot is
+// charging, spinning slowly or just starting to move.
+struct EdgeFilter {
+  uint32_t blackSinceMs = 0;  // start of the current black run (0 = none)
+  uint32_t lastBlackMs = 0;   // last time the sensor read black
+  float travelled = 0;        // distance over black, in ms at full speed
 
   void reset() {
-    confidence = 0;
-    active = false;
-    lastSampleMs = 0;
+    blackSinceMs = lastBlackMs = 0;
+    travelled = 0;
   }
 
-  bool update(uint8_t pin, uint32_t now) {
-    if (now != lastSampleMs) {
-      lastSampleMs = now;
-      int level = digitalRead(pin);
-      if (level == LINE_ACTIVE_LEVEL) {
-        if (confidence < CONFIDENCE_MAX) confidence += 2;
+  // dtFull = distance moved since the last call, in ms at full speed
+  bool update(uint8_t pin, uint32_t now, float dtFull) {
+    if (digitalRead(pin) == LINE_ACTIVE_LEVEL) {
+      if (!blackSinceMs) {
+        blackSinceMs = now ? now : 1;
+        travelled = 0;
       } else {
-        if (confidence > 0) confidence -= 1;
+        travelled += dtFull;
       }
-
-      if (!active && confidence >= EDGE_CONFIRM_COUNT) {
-        active = true;
-      } else if (active && confidence <= EDGE_RELEASE_COUNT) {
-        active = false;
-      }
+      lastBlackMs = now;
+    } else if (blackSinceMs && now - lastBlackMs > EDGE_GAP_MS) {
+      blackSinceMs = 0;  // back on white: it was a mark, not the border
     }
-    return active;
+    return blackSinceMs &&
+           (travelled >= EDGE_CONFIRM_MS || now - blackSinceMs >= EDGE_CONFIRM_MAX_MS);
   }
 };
 
-static IntegratorDebounce debouncers[4];
+static EdgeFilter debouncers[4];
+static float speedEst = 0;      // estimated robot speed, 0..1 of full speed
+static uint32_t lastReadMs = 0;
 
 void begin() {
   pinMode(PIN_IR_FRONT_LEFT, INPUT_PULLUP);
@@ -207,12 +206,21 @@ void reset() {
 
 LineState read() {
   uint32_t now = millis();
+  float dt = lastReadMs ? (float)(now - lastReadMs) : 0;
+  lastReadMs = now;
+
+  // Commanded speed (average wheel speed, either direction), then a simple
+  // lag so the estimate takes ~MOTOR_SPINUP_MS to follow a sudden change.
+  float target = (abs(Motors::lastLeft()) + abs(Motors::lastRight())) / (2 * 255.0f);
+  speedEst += (target - speedEst) * min(1.0f, dt / MOTOR_SPINUP_MS);
+  float dtFull = dt * speedEst;
+
   LineState s;
-  s.frontLeft  = debouncers[0].update(PIN_IR_FRONT_LEFT, now);
-  s.frontRight = debouncers[1].update(PIN_IR_FRONT_RIGHT, now);
-  s.rearLeft   = USE_REAR_EDGE_SENSORS ? debouncers[2].update(PIN_IR_REAR_LEFT, now) : false;
+  s.frontLeft  = debouncers[0].update(PIN_IR_FRONT_LEFT, now, dtFull);
+  s.frontRight = debouncers[1].update(PIN_IR_FRONT_RIGHT, now, dtFull);
+  s.rearLeft   = USE_REAR_EDGE_SENSORS ? debouncers[2].update(PIN_IR_REAR_LEFT, now, dtFull) : false;
   s.rearRight  = (USE_REAR_EDGE_SENSORS && USE_REAR_RIGHT_SENSOR)
-                     ? debouncers[3].update(PIN_IR_REAR_RIGHT, now)
+                     ? debouncers[3].update(PIN_IR_REAR_RIGHT, now, dtFull)
                      : false;
   return s;
 }

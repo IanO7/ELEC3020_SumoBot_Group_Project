@@ -34,12 +34,19 @@ constexpr uint8_t LINE_ACTIVE_LEVEL = HIGH;
 constexpr bool USE_REAR_EDGE_SENSORS = false;
 // false = ignore just the rear-right sensor (e.g. if it misreads).
 constexpr bool USE_REAR_RIGHT_SENSOR = false;
-// Leaky integrator filter thresholds:
-// Samples every 1 ms. Pin == border increments confidence (+2), else decrements (-1).
-// Requires CONFIRM_COUNT to activate, drops below RELEASE_COUNT to clear.
-// Completely filters out motor EMI brush spikes and border boundary chatter.
-constexpr int16_t  EDGE_CONFIRM_COUNT = 14;  // ~10-12 ms of predominantly black to trigger
-constexpr int16_t  EDGE_RELEASE_COUNT = 4;   // ~12-16 ms of predominantly white to clear
+// Edge filter: the border must read black CONTINUOUSLY for a set DISTANCE
+// (not time) to count. Scratches / marks inside the ring are narrow, so the
+// sensor is back on white first and they are ignored - at any speed.
+// Distance is measured as "ms at full speed": EDGE_CONFIRM_MS = 20 means
+// 20 ms at full speed, 40 ms at half speed, etc. Robot speed is estimated
+// from the motor commands, allowing MOTOR_SPINUP_MS to get up to speed (so a
+// sudden charge from a slow search doesn't count as fast yet).
+// Raise CONFIRM if marks still trigger; lower it if the robot goes too far
+// over the border before reacting (check with TEST_EDGE_ONLY at full speed).
+constexpr uint32_t EDGE_CONFIRM_MS     = 20;
+constexpr uint32_t EDGE_CONFIRM_MAX_MS = 80;  // always counts after this long (stopped / being pushed)
+constexpr uint32_t EDGE_GAP_MS         = 2;   // white blips this short don't break the run (border chatter)
+constexpr uint32_t MOTOR_SPINUP_MS     = 150; // rough time for the wheels to reach a new speed
 // Cooldown after an edge escape finishes: prevents immediate re-triggering / jitter
 // and allows the robot to drive safely back into the ring interior.
 constexpr uint32_t EDGE_ESCAPE_COOLDOWN_MS = 300;
