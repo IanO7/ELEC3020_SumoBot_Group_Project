@@ -29,11 +29,12 @@ constexpr uint16_t MOTOR_RAMP_MS     = 0;    // ramp 0 -> full speed (0 = instan
 // sensors read HIGH over black (tested in sensor_test) -> HIGH. A standard
 // black ring with a white border would need LOW.
 constexpr uint8_t LINE_ACTIVE_LEVEL = HIGH;
-// false = the sumo code ignores the rear sensors. Setting false eliminates
-// phantom edge triggers and escape jitter caused by GPIO 43 (UART0 TX).
-constexpr bool USE_REAR_EDGE_SENSORS = false;
+// false = the sumo code ignores the rear sensors. (GPIO 43 is UART0 TX and
+// glitches at boot; Serial is USB here so it's quiet after that, and the
+// edge filter below rejects short glitches.)
+constexpr bool USE_REAR_EDGE_SENSORS = true;
 // false = ignore just the rear-right sensor (e.g. if it misreads).
-constexpr bool USE_REAR_RIGHT_SENSOR = false;
+constexpr bool USE_REAR_RIGHT_SENSOR = true;
 // Edge filter: the border must read black for a set DISTANCE (not time)
 // to count. Scratches / marks inside the ring are narrow, so the sensor is
 // back on white first and they are ignored - at any speed. White readings

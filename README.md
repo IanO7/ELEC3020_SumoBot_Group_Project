@@ -4,7 +4,7 @@ Autonomous sumobot firmware for the **LILYGO T-Display-S3** (ESP32-S3), built wi
 
 ## Status (10 Oct 2026)
 
-Everything works on the practice mat (white ring, black border): starts straight away on power-on, edge escape at full speed, sumo-style search, and full-power attack that pushes objects out. Front IR sensors and all 3 sonars are enabled (rear IR sensors off: `USE_REAR_EDGE_SENSORS = false`); `include/config.h` is at competition values (start delay 0 - see to-do).
+Everything works on the practice mat (white ring, black border): starts straight away on power-on, edge escape at full speed, sumo-style search, and full-power attack that pushes objects out. All 4 IR sensors and all 3 sonars are enabled; `include/config.h` is at competition values (start delay 0 - see to-do).
 
 Still to do:
 - Tune `SEARCH_SPIN_MS` (about one full turn) and `SEARCH_TURN_SPEED` (lower if it spins past a target), and `EDGE_PUSH_THROUGH_MS` (0-250) for pushing objects out without following them.
