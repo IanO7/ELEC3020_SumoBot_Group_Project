@@ -41,12 +41,12 @@ constexpr bool USE_REAR_RIGHT_SENSOR = true;
 // cancel black ones (EDGE_WHITE_WEIGHT x faster), so motor noise that makes
 // a sensor flicker never adds up to a border.
 // Distance is measured as "ms at full speed" (from the motor commands):
-// EDGE_CONFIRM_MS = 10 means 10 ms at full speed, 20 ms at half speed, etc.
+// EDGE_CONFIRM_MS = 8 means 8 ms at full speed, 16 ms at half speed, etc.
 // Only driving TOWARD the sensor's side counts (forward for front sensors),
 // so spinning on the spot over a scuff never triggers an escape.
 // Lower CONFIRM if it still drives out; raise it if scuffs in the middle of
 // the ring trigger escapes (check with TEST_EDGE_ONLY at full speed).
-constexpr uint32_t EDGE_CONFIRM_MS     = 10;
+constexpr uint32_t EDGE_CONFIRM_MS     = 8;
 constexpr uint32_t EDGE_CONFIRM_MAX_MS = 40;  // always counts after this much black (stopped / being pushed)
 constexpr float    EDGE_WHITE_WEIGHT   = 2.0f; // 1 ms of white cancels this many ms of black (higher = more noise-proof, but a patchy border may not count)
 
@@ -78,17 +78,17 @@ constexpr uint32_t START_DELAY_MS   = 0;
 //   EDGE_TEST_SPEED and does the normal edge escape at the border.
 constexpr bool     TEST_ATTACK_ONLY = false;
 constexpr bool     TEST_EDGE_ONLY   = false;
-constexpr uint8_t  EDGE_TEST_SPEED  = 255;
+constexpr uint8_t  EDGE_TEST_SPEED  = 191;
 constexpr int8_t   START_SEARCH_DIR = +1;    // first search spin: +1 right, -1 left
 
 // --- Attack -----------------------------------------------------------
-constexpr uint8_t  ATTACK_SPEED     = 255;   // target close in front: full push
-constexpr uint8_t  APPROACH_SPEED   = 255;   // target ahead but far (full power: sumo-style charge as soon as it is seen)
-constexpr uint8_t  TRACK_TURN_SPEED = 255;   // outer wheel when swinging toward a side target
+constexpr uint8_t  ATTACK_SPEED     = 191;   // target close in front (191 = 75%; 255 = full power)
+constexpr uint8_t  APPROACH_SPEED   = 191;   // target ahead but far (sumo-style charge as soon as it is seen)
+constexpr uint8_t  TRACK_TURN_SPEED = 191;   // outer wheel when swinging toward a side target
 // Inner wheel when turning toward a side target. 120 keeps the robot driving
 // forward while swinging into the target. 0 stopped the inner wheel and caused
 // spinning in circles.
-constexpr int16_t  TRACK_INNER_SPEED = 120;
+constexpr int16_t  TRACK_INNER_SPEED = 90;
 // Steering ratio when mid + one side sees target. 0.8 is a smooth curve that keeps
 // heading towards target without swinging away (0.6 was too aggressive and circled).
 constexpr float    STEER_RATIO      = 0.8f;
@@ -118,7 +118,7 @@ constexpr uint32_t SIDE_IGNORE_MS       = 1500;
 // Sumo-style search: spin on the spot to sweep the sonar round the ring,
 // then a short forward hop to a new spot, repeat.
 constexpr uint8_t  SEARCH_TURN_SPEED = 140;  // 140 is reliable for ultrasonic echo acquisition
-constexpr uint8_t  SEARCH_FWD_SPEED  = 255;  // forward hop between spins
+constexpr uint8_t  SEARCH_FWD_SPEED  = 191;  // forward hop between spins
 constexpr uint32_t SEARCH_SPIN_MS    = 1000; // tuned for full turn
 // Don't spin again if we already did within this time, and never spin right
 // after an edge escape (the escape already turned us). Stops repeated spins.

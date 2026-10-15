@@ -82,7 +82,7 @@ LiPo care: charge only on a balance charger, don't run below ~3.5V/cell (10.5V),
 
 Power on → match starts immediately and runs until the battery is disconnected (with `START_DELAY_MS` > 0 the screen counts down `START IN n` first). Every loop, in priority order:
 
-1. **Edge** - an IR sensor sees black for a set distance (`EDGE_CONFIRM_MS` = 10 ms at full speed, longer when slower). Only driving toward the border counts (spinning on the spot over a scuff doesn't), and white readings cancel black ones 2x as fast, so scratches / scuffs inside the ring and motor-noise flicker never count:
+1. **Edge** - an IR sensor sees black for a set distance (`EDGE_CONFIRM_MS` = 8 ms at full speed, longer when slower). Only driving toward the border counts (spinning on the spot over a scuff doesn't), and white readings cancel black ones 2x as fast, so scratches / scuffs inside the ring and motor-noise flicker never count:
    - front sensor → reverse, then turn away (both front → turn ~180°)
    - rear sensor → drive forward, angled away
    - the edge is checked all the time, also during and right after an escape (a forward hop onto the border, or reversing onto it, starts a new escape)
@@ -98,7 +98,7 @@ Power on → match starts immediately and runs until the battery is disconnected
 |---|---|
 | `TEST_EDGE_ONLY = true` | Drives forward and only does edge escapes (no search/attack) |
 | `TEST_ATTACK_ONLY = true` | No edge, no search: waits until a sonar sees something, then attacks. **Test on the floor** |
-| `EDGE_CONFIRM_MS` (10) | Edge filter distance, in ms of travel at full speed (scaled up automatically when slower). Raise (15) if scuffs in the middle of the ring trigger escapes; lower (6-8) if it still drives out |
+| `EDGE_CONFIRM_MS` (8) | Edge filter distance, in ms of travel at full speed (scaled up automatically when slower). Raise (15) if scuffs in the middle of the ring trigger escapes; lower (5-6) if it still drives out |
 | `EDGE_CONFIRM_MAX_MS` (40) | Black for this long always counts as the border (stopped or being pushed) |
 | `EDGE_WHITE_WEIGHT` (2.0) | How fast white readings cancel black ones. Raise (4-5) if it still escapes in the middle of the ring |
 | `USE_MID_SONAR` / `USE_SIDE_SONARS = false` | Ignore a faulty sonar |
