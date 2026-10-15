@@ -43,11 +43,11 @@ constexpr bool USE_REAR_RIGHT_SENSOR = true;
 // Distance is measured as "ms at full speed" (from the motor commands):
 // EDGE_CONFIRM_MS = 10 means 10 ms at full speed, 20 ms at half speed, etc.
 // Only driving TOWARD the sensor's side counts (forward for front sensors),
-// so spinning on the spot over a scuff never triggers an escape.
+// so spinning on the spot, turning or stalling over a mark never triggers.
 // Lower CONFIRM if it still drives out; raise it if scuffs in the middle of
 // the ring trigger escapes (check with TEST_EDGE_ONLY at full speed).
 constexpr uint32_t EDGE_CONFIRM_MS     = 10;
-constexpr uint32_t EDGE_CONFIRM_MAX_MS = 40;  // always counts after this much black (stopped / being pushed)
+constexpr uint32_t EDGE_CONFIRM_MAX_MS = 40;  // REAR sensors only: black this long always counts (being pushed out backwards)
 constexpr float    EDGE_WHITE_WEIGHT   = 2.0f; // 1 ms of white cancels this many ms of black (higher = more noise-proof, but a patchy border may not count)
 
 // --- Ultrasonic -------------------------------------------------------

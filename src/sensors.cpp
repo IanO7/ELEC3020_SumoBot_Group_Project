@@ -158,8 +158,11 @@ namespace Line {
 // Edge filter: each reading adds or removes "border evidence".
 //   black -> + distance moved toward it (in ms at full speed) and + time
 //   white -> - EDGE_WHITE_WEIGHT x time from both
-// The border counts once the distance reaches EDGE_CONFIRM_MS, or the time
-// reaches EDGE_CONFIRM_MAX_MS (stopped / being pushed). The real border is
+// The border counts once the distance reaches EDGE_CONFIRM_MS, or (rear
+// sensors only) the time reaches EDGE_CONFIRM_MAX_MS - being shoved backwards
+// out of the ring while our wheels drive forward. The front sensors have no
+// time rule: only driving forward can take us out over the front, so a slow
+// turn or a stall over a mark never counts. The real border is
 // solid black and builds up fast; a narrow mark is crossed before it gets
 // there; motor noise flickering black/white is mostly white so it never
 // builds up. One reading never counts for more than MAX_SAMPLE_MS, so a
@@ -170,7 +173,8 @@ struct EdgeFilter {
 
   void reset() { dist = time = 0; }
 
-  bool update(uint8_t pin, float dt, float speed) {
+  // timeRule = also count plain time on black (rear sensors)
+  bool update(uint8_t pin, float dt, float speed, bool timeRule) {
     if (digitalRead(pin) == LINE_ACTIVE_LEVEL) {
       dist = min(dist + dt * speed, 2.0f * EDGE_CONFIRM_MS);
       time = min(time + dt, 2.0f * EDGE_CONFIRM_MAX_MS);
@@ -178,7 +182,7 @@ struct EdgeFilter {
       dist = max(0.0f, dist - EDGE_WHITE_WEIGHT * dt);
       time = max(0.0f, time - EDGE_WHITE_WEIGHT * dt);
     }
-    return dist >= EDGE_CONFIRM_MS || time >= EDGE_CONFIRM_MAX_MS;
+    return dist >= EDGE_CONFIRM_MS || (timeRule && time >= EDGE_CONFIRM_MAX_MS);
   }
 };
 
@@ -214,11 +218,11 @@ LineState read() {
   float dt = min(elapsed, MAX_SAMPLE_MS);  // one reading = at most 2 ms of evidence
 
   LineState s;
-  s.frontLeft  = debouncers[0].update(PIN_IR_FRONT_LEFT, dt, fwdEst);
-  s.frontRight = debouncers[1].update(PIN_IR_FRONT_RIGHT, dt, fwdEst);
-  s.rearLeft   = USE_REAR_EDGE_SENSORS ? debouncers[2].update(PIN_IR_REAR_LEFT, dt, backEst) : false;
+  s.frontLeft  = debouncers[0].update(PIN_IR_FRONT_LEFT, dt, fwdEst, false);
+  s.frontRight = debouncers[1].update(PIN_IR_FRONT_RIGHT, dt, fwdEst, false);
+  s.rearLeft   = USE_REAR_EDGE_SENSORS ? debouncers[2].update(PIN_IR_REAR_LEFT, dt, backEst, true) : false;
   s.rearRight  = (USE_REAR_EDGE_SENSORS && USE_REAR_RIGHT_SENSOR)
-                     ? debouncers[3].update(PIN_IR_REAR_RIGHT, dt, backEst)
+                     ? debouncers[3].update(PIN_IR_REAR_RIGHT, dt, backEst, true)
                      : false;
   return s;
 }

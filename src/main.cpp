@@ -303,17 +303,22 @@ static void runMatch() {
     pushingAtEdge = false;
   }
 
-  // 1. Edge handling. The edge is NEVER ignored, even mid-escape or right
-  // after one: at full speed even a few hundred ms blind drives off the ring.
-  // No jitter from this, because the front sensors only build up evidence
-  // while driving forward and the rear ones only while reversing - so the
+  // 1. Edge handling. The front edge is never ignored while driving
+  // forward, even mid-escape or right after one: at full speed even a few
+  // hundred ms blind drives off the ring. No jitter from this, because the
+  // front sensors only build up evidence while driving forward - so the
   // reverse / turn of an escape can't re-trigger on the edge we just left.
   if (state == State::Escape) {
-    // Escape step heading into an edge (forward hop onto the border, or
-    // reversing onto it behind us): re-plan from the new edge.
+    // Escape's forward hop reaches the border: re-plan from the new edge.
+    // The reverse is NOT interrupted by the rear sensors: reversing away from
+    // the border crosses the middle of the ring, and a mark there used to
+    // start a forward escape straight back into the edge (escape loop).
     const Step &cur = escapeSteps[escapeIndex];
-    const int dir = cur.left + cur.right;
-    if ((dir > 0 && line.front()) || (dir < 0 && line.rear())) planEscape(line);
+    if (cur.left + cur.right > 0 && line.front()) {
+      LineState front = line;
+      front.rearLeft = front.rearRight = false;
+      planEscape(front);
+    }
     runEscape();
     return;
   }

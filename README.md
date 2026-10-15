@@ -85,7 +85,7 @@ Power on → match starts immediately and runs until the battery is disconnected
 1. **Edge** - an IR sensor sees black for a set distance (`EDGE_CONFIRM_MS` = 10 ms at full speed, longer when slower). Only driving toward the border counts (spinning on the spot over a scuff doesn't), and white readings cancel black ones 2x as fast, so scratches / scuffs inside the ring and motor-noise flicker never count:
    - front sensor → reverse, then turn away (both front → turn ~180°)
    - rear sensor → drive forward, angled away
-   - the edge is checked all the time, also during and right after an escape (a forward hop onto the border, or reversing onto it, starts a new escape)
+   - the front edge is checked whenever driving forward, also during and right after an escape (a forward hop onto the border starts a new escape). The escape's reverse isn't interrupted by the rear sensors, so a mark crossed while reversing can't cause an escape loop
    - while pushing an opponent (in contact), keep pushing for `EDGE_PUSH_THROUGH_MS` to shove it over the line, then escape - even if the sensors have already crossed the line.
 2. **Attack** - the middle sonar sees a target within 70 cm (3 readings in a row) → **full-power charge**; side sonars steer to keep it centred. A side sonar alone doesn't start an attack, it turns the search toward that side.
 3. **Search** - spin on the spot (about one full turn) toward where the opponent was last seen, then a short forward hop, repeat.
@@ -99,7 +99,7 @@ Power on → match starts immediately and runs until the battery is disconnected
 | `TEST_EDGE_ONLY = true` | Drives forward and only does edge escapes (no search/attack) |
 | `TEST_ATTACK_ONLY = true` | No edge, no search: waits until a sonar sees something, then attacks. **Test on the floor** |
 | `EDGE_CONFIRM_MS` (10) | Edge filter distance, in ms of travel at full speed (scaled up automatically when slower). Raise (15) if scuffs in the middle of the ring trigger escapes; lower (6-8) if it still drives out |
-| `EDGE_CONFIRM_MAX_MS` (40) | Black for this long always counts as the border (stopped or being pushed) |
+| `EDGE_CONFIRM_MAX_MS` (40) | Rear sensors only: black for this long always counts as the border (being shoved out backwards). Front sensors only count while driving forward |
 | `EDGE_WHITE_WEIGHT` (2.0) | How fast white readings cancel black ones. Raise (4-5) if it still escapes in the middle of the ring |
 | `USE_MID_SONAR` / `USE_SIDE_SONARS = false` | Ignore a faulty sonar |
 | `USE_REAR_EDGE_SENSORS` / `USE_REAR_RIGHT_SENSOR = false` | Ignore faulty rear IR sensors |
